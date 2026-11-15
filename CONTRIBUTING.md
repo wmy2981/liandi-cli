@@ -10,6 +10,7 @@
    Evaluation cases live in `evals/liandi.json`, outside the installed skill directory, so the shipped skill cannot leak its own expected answers.
 8. Keep the runtime dependency footprint small. Do not introduce cookie-based authentication as a replacement for the documented API Token flow.
 
-9. Maintainer releases follow [docs/publishing.md](docs/publishing.md); CI must be green on all three platforms first.
+9. Changing a command name, flag, exit code or envelope field is a breaking change: say so in the PR and update [CHANGELOG.md](CHANGELOG.md).
+10. Releases are tag-driven: `npm run release:patch|minor|major` then `git push --follow-tags`. See [docs/publishing.md](docs/publishing.md). Do not publish by hand.
 
 Report issues at https://github.com/wmy2981/liandi-cli/issues.

@@ -11,6 +11,7 @@
 - 每级配置独立管理 API Token，日志和预览不输出凭据。
 - 自带 `liandi/<version>` User-Agent，可安装 Agent 技能。
 - Node.js 20+，Windows/macOS/Linux 通用，运行时仅依赖 Commander。
+- 语义化版本，tag 触发发布；CI 覆盖三平台 × Node 20/22/24 与打包安装验证。
 
 ## 安装与运行
 
@@ -277,9 +278,14 @@ npm pack --dry-run
 - 请遵守官方使用原则，每个 IP 每分钟不超过 120 次请求；不要批量填充内容。
 - 官方 v2 线上实现与当前开源 Symphony 仓库存在差异，本 CLI 以官方 v2 文档为接口依据。
 
-## 维护者发布
+## 版本与发布
 
-维护者发布新版本见 [docs/publishing.md](docs/publishing.md)（含发布前检查与 npm 2FA 说明）。
+遵循语义化版本，`vX.Y.Z` tag 推送到 `main` 才会自动发布到 npm 并创建 GitHub Release；其余推送只跑测试。版本号、发布步骤与 npm token 配置见 [docs/publishing.md](docs/publishing.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+
+```sh
+npm run release:patch   # 或 release:minor / release:major
+git push --follow-tags  # 触发 Release 工作流
+```
 
 ## 开源
 

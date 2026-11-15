@@ -33,7 +33,11 @@
     "test:coverage": "vitest run --coverage",
     "prepack": "npm run build",
     "pack:check": "node scripts/pack-check.mjs",
-    "prepublishOnly": "npm run typecheck && npm test && node scripts/pack-check.mjs"
+    "prepublishOnly": "npm run typecheck && npm test && node scripts/pack-check.mjs",
+    "check:version": "node scripts/check-version.mjs",
+    "release:patch": "npm version patch -m \"chore: release v%s\"",
+    "release:minor": "npm version minor -m \"chore: release v%s\"",
+    "release:major": "npm version major -m \"chore: release v%s\""
   },
   "keywords": [
     "ld246",
