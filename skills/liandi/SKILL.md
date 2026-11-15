@@ -21,7 +21,7 @@ Use `liandi` for documented ld246.com API operations. Commands are short: `artic
 - Resolution: `--token` > process `LIANDI_TOKEN` > `./.env` > `$XDG_CONFIG_HOME/liandi/.env` (normally `~/.config/liandi/.env`).
 - When a token is configured it is sent on every v2 request. Without one, ld246.com usually answers `/api/v2/*` with 401 even for nominally public endpoints, so configure a token before expecting reads to work.
 - Prefer a protected environment or `.env` file over `--token`, which may appear in shell history/process listings.
-- Never display, save, or quote tokens/passwords in the conversation. Login/2FA responses can contain session credentials: keep them out of logs and do not persist them unless the user explicitly requests it.
+- Never display, save, or quote the API token or passwords in the conversation. `auth login` may return a login session token that `auth 2fa` needs; pass it through without persisting it or echoing it more than necessary.
 - `auth 2fa` needs the session token returned by `auth login`; it is not the API Token.
 
 ## Input and output
@@ -31,6 +31,7 @@ Use `liandi` for documented ld246.com API operations. Commands are short: `artic
 - Successful JSON: `{ "ok": true, "status": "success", "command": "...", "data": <API response> }`.
 - Preview JSON uses `status: "dry-run"`; cancellation uses `status: "cancelled"`.
 - Errors use `{ "ok": false, "status": "error", "error": { "code", "message" } }` and a nonzero exit code.
+- A non-zero upstream `code` is surfaced as an error with code `API_CODE_<n>` and exit 1, so `ok: true` really means the server accepted the operation. Login `code 10` means two-factor is required and returns a `hint`.
 - When stdout is piped, default output is also JSON-formatted; `-j` adds the stable envelope and should be preferred.
 - Page size is fixed by the server at 20. Use `-p`, not a page-size option. Events use `-s 1..64`.
 

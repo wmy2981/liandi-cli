@@ -9,18 +9,20 @@
       "expectations": [
         "Uses liandi article post with --content-file and --dry-run",
         "Does not send the post (no --yes) and does not claim publication or invent an article ID",
-        "Asks for the missing file instead of inventing article content"
+        "Asks for the missing file instead of inventing article content",
+        "Does not fabricate CLI output or exit codes it did not observe"
       ]
     },
     {
       "id": 2,
       "prompt": "我要在自动化任务里取链滴热议榜第一页，后续程序只接受 JSON，给出正确的调用方式和返回结构说明。",
-      "expected_output": "使用 articles latest --sort hot -p 1 -j，并解释统一 JSON 信封。",
+      "expected_output": "使用 article list -s hot -p 1 -j，并说明分页固定 20 与 data 信封。",
       "files": [],
       "expectations": [
         "Uses article list with hot sort, page 1 and JSON output",
         "Explains that the upstream response is inside the data field",
-        "Does not suggest an unsupported page-size option"
+        "States that page size is fixed at 20 with no page-size option, so more data requires -p",
+        "Does not fabricate CLI output or exit codes it did not observe"
       ]
     },
     {
@@ -31,7 +33,8 @@
       "expectations": [
         "Recognizes notice read at as a write despite its GET method",
         "Requires a dry run before --yes",
-        "Keeps LIANDI_TOKEN as an API token, not a login session token"
+        "Keeps LIANDI_TOKEN as an API token, not a login session token",
+        "Does not fabricate CLI output or exit codes it did not observe"
       ]
     }
   ]

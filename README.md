@@ -101,7 +101,13 @@ Error [AUTH_REQUIRED]: API token required. ...
 }
 ```
 
-退出码：`0` 成功/预览/取消，`1` API/网络/运行错误，`2` 参数、配置或确认方式错误。HTTP 非 2xx 会报错；调用方还应检查上游 JSON 的 `code`。
+退出码：`0` 成功/预览/取消，`1` 上游业务错误/网络/运行错误，`2` 参数、配置或确认方式错误。
+
+错误分三层，都会被转成上面的错误信封：
+
+1. HTTP 非 2xx（如 401/403/5xx）或响应不是 JSON；
+2. **上游 JSON `code != 0`**（HTTP 200 但业务失败），错误码为 `API_CODE_<code>`，`message` 取上游 `msg`。唯一例外是登录接口的 `code 10`（需要两步验证），它按成功返回并附带 `hint` 指引执行 `auth 2fa`；
+3. 本地参数/配置错误。
 
 ## 写操作安全流程
 
@@ -183,11 +189,13 @@ liandi auth login -u <usernameOrEmail> --password-stdin --dry-run
 liandi auth login -u <usernameOrEmail> --password-stdin
 ```
 
-CLI 按官方要求本地计算密码 MD5 后发送。若服务端返回 `code=10`，其会话 token 只交给：
+CLI 按官方要求本地计算密码 MD5 后发送。若服务端返回 `code=10`（需要两步验证），CLI 会照常返回该会话 token 并给出 `hint`，把它交给：
 
 ```sh
 liandi auth 2fa --session-token <loginToken> --code <6位动态口令>
 ```
+
+该会话 token 是登录凭证，不是 API Token：不会写入任何文件，请勿提交到仓库或贴进日志；预览输出中不会出现密码和验证码。
 
 验证码需求由服务端返回；CLI 不猜测或自动下载验证码。
 
@@ -208,10 +216,13 @@ npm run typecheck
 npm run build
 npm test
 npm run test:coverage
+node scripts/verify.mjs        # 全命令/全参数离线校验（113 项）
 npm pack --dry-run
 ```
 
-测试使用模拟函数和本地 HTTP 服务，不访问 ld246.com，不需要真实 Token。接口路径测试覆盖文档中的全部操作；构建产物执行公共读取、确认写入和未确认拒绝的端到端测试。
+`node scripts/verify.mjs` 会启动本地模拟服务，逐项验证全部命令、全部参数、确认流程、凭据优先级与错误映射（113 项）。
+
+单元与集成测试使用模拟函数和本地 HTTP 服务，不访问 ld246.com，不需要真实 Token。接口路径测试覆盖文档中的全部操作；构建产物执行公共读取、确认写入和未确认拒绝的端到端测试。
 
 ## 范围与限制
 

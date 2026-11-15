@@ -10,6 +10,9 @@ import { formatOutput, redact } from './output.js';
 import { installSkill, skillPaths } from './skill.js';
 
 interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string }
+
+/** Last resolved command, used to label errors thrown after option parsing. */
+let lastCommand = 'liandi';
 type Values = Record<string, string | boolean | undefined>;
 
 function packageVersion(): string {
@@ -56,7 +59,6 @@ export function createProgram(options: ProgramOptions = {}): Command {
   const io = options.io ?? defaultIO;
   const version = options.version ?? packageVersion();
   const program = new Command();
-  let commandName = 'liandi';
   let invocationGlobals: GlobalOptions = {};
   program.name('liandi').description('Human and agent friendly CLI for the ld246.com community API')
     .version(version, '-v, --version', 'Show version').helpOption('-h, --help', 'Show help')
@@ -64,9 +66,8 @@ export function createProgram(options: ProgramOptions = {}): Command {
     .configureOutput({
       writeOut: text => { io.stdout.write(text); },
       writeErr: text => { io.stderr.write(text); },
-      outputError: text => {
-        io.stderr.write(formatOutput({ ok: false, status: 'error', command: commandName, error: { code: 'INVALID_INPUT', message: text.trim() } }, invocationGlobals.json ?? false) + '\n');
-      },
+      // Errors are rendered once, by run(), so Commander must not print them itself.
+      outputError: () => {},
     })
     .addHelpText('after', `
 Global options (can appear before or after commands):
@@ -83,7 +84,7 @@ Authentication: --token > LIANDI_TOKEN > ./.env > ~/.config/liandi/.env
 Run "liandi <group> --help" for subcommands.`).exitOverride();
 
   const perform = async (name: string, args: string[], values: Values): Promise<void> => {
-    commandName = name;
+    lastCommand = name;
     const definition = definitions[name];
     if (!definition) throw new LiandiError('Internal command mapping is missing', 'INTERNAL_ERROR');
     const globals = invocationGlobals;
@@ -196,26 +197,26 @@ Run "liandi <group> --help" for subcommands.`).exitOverride();
 
   run(group('skill', 'Install the bundled agent skill').command('install').description('Install or update ~/.agents/skills/liandi (local file write)'),
     async () => {
-      commandName = 'skill.install';
+      lastCommand = 'skill.install';
       const globals = invocationGlobals;
       const preview = { action: 'install or update', destination: skillPaths().destination };
       if (globals.dryRun) {
-        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: commandName, data: preview }, globals.json ?? false) + '\n');
+        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false) + '\n');
         return;
       }
       if (!globals.yes) {
-        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: commandName, data: preview }, globals.json ?? false) + '\n');
+        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false) + '\n');
         if (!io.stdin.isTTY || !io.stdout.isTTY) throw new LiandiError('Confirmation required. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2);
         const confirm = io.confirm ?? (async (prompt: string) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           try { return await rl.question(prompt); } finally { rl.close(); }
         });
         if (!/^y(?:es)?$/iu.test((await confirm('Install this skill? [y/N] ')).trim())) {
-          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: commandName }, globals.json ?? false) + '\n');
+          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, globals.json ?? false) + '\n');
           return;
         }
       }
-      io.stdout.write(formatOutput({ ok: true, status: 'success', command: commandName, data: await installSkill() }, globals.json ?? false) + '\n');
+      io.stdout.write(formatOutput({ ok: true, status: 'success', command: lastCommand, data: await installSkill() }, globals.json ?? false) + '\n');
     });
 
   // Global flags are parsed separately so they work at any position, as agents commonly append -j.
@@ -225,9 +226,16 @@ Run "liandi <group> --help" for subcommands.`).exitOverride();
     const userArgs = parseOptions?.from === 'user' ? raw : raw.slice(2);
     const { globals, rest } = parseFlags(userArgs);
     invocationGlobals = globals;
+    lastCommand = rest.filter(part => !part.startsWith('-')).slice(0, 2).join('.') || 'liandi';
     return originalParseAsync(rest, { from: 'user' });
   };
   return program;
+}
+
+/** Usage errors from Commander are argument errors, not internal failures. */
+function normalizeError(error: unknown): unknown {
+  if (!(error instanceof CommanderError)) return error;
+  return new LiandiError(error.message.replace(/^error:\s*/iu, '').trim(), 'INVALID_INPUT', 2);
 }
 
 export async function run(argv: string[], options: ProgramOptions = {}): Promise<number> {
@@ -238,7 +246,8 @@ export async function run(argv: string[], options: ProgramOptions = {}): Promise
     return 0;
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.version'].includes(error.code)) return 0;
-    io.stderr.write(formatOutput(errorEnvelope(error), json) + '\n');
-    return error instanceof LiandiError ? error.exitCode : error instanceof CommanderError ? (['commander.invalidArgument', 'commander.missingArgument', 'commander.missingMandatoryOptionValue', 'commander.unknownOption', 'commander.unknownCommand', 'commander.excessArguments'].includes(error.code) ? 2 : error.exitCode) : 1;
+    const envelope = errorEnvelope(normalizeError(error), lastCommand);
+    io.stderr.write(formatOutput(envelope, json) + '\n');
+    return envelope.status === 'error' ? (normalizeError(error) as LiandiError).exitCode : 1;
   }
 }

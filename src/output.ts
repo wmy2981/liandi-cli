@@ -5,6 +5,8 @@ export interface OutputEnvelope {
   status: OutputKind;
   command?: string;
   data?: unknown;
+  /** Optional guidance, e.g. the next step when 2FA is required. */
+  hint?: string;
   error?: { code: string; message: string; details?: unknown };
 }
 
@@ -13,7 +15,7 @@ export function formatOutput(envelope: OutputEnvelope, json: boolean): string {
   if (envelope.status === 'error') return `Error [${envelope.error?.code}]: ${envelope.error?.message}`;
   if (envelope.status === 'dry-run') return `Dry run: no request was sent.\n${formatData(envelope.data)}`;
   if (envelope.status === 'cancelled') return 'Cancelled: no request was sent.';
-  return formatData(envelope.data);
+  return envelope.hint ? `${formatData(envelope.data)}\n\n${envelope.hint}` : formatData(envelope.data);
 }
 
 function formatData(value: unknown): string {
@@ -25,6 +27,6 @@ export function redact(value: unknown): unknown {
   if (!value || typeof value !== 'object') return value;
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [
     key,
-    /^(?:token|userPassword|twofactorAuthCode|authorization|cookie)$/iu.test(key) ? '[REDACTED]' : redact(item),
+    /^(?:userPassword|twofactorAuthCode|authorization|cookie)$/iu.test(key) ? '[REDACTED]' : redact(item),
   ]));
 }

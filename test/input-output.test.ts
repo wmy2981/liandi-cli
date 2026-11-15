@@ -33,7 +33,8 @@ describe('output', () => {
   it('uses one JSON envelope and redacts credentials', () => {
     const result = JSON.parse(formatOutput({ ok: true, status: 'success', command: 'test', data: { code: 0 } }, true));
     expect(result).toEqual({ ok: true, status: 'success', command: 'test', data: { code: 0 } });
-    expect(redact({ token: 'x', userPassword: 'y', nested: { twofactorAuthCode: '123456' }, title: 'ok' })).toEqual({ token: '[REDACTED]', userPassword: '[REDACTED]', nested: { twofactorAuthCode: '[REDACTED]' }, title: 'ok' });
+    expect(redact({ token: 'session', userPassword: 'y', nested: { twofactorAuthCode: '123456' }, title: 'ok' }))
+      .toEqual({ token: 'session', userPassword: '[REDACTED]', nested: { twofactorAuthCode: '[REDACTED]' }, title: 'ok' });
   });
   it('makes dry-run and cancellation explicit in human output', () => {
     expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, false)).toContain('no request was sent');

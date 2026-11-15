@@ -21,6 +21,15 @@ export interface IO {
 
 export const defaultIO: IO = { stdout, stderr, stdin };
 
+/** Upstream business errors arrive as HTTP 200 with a non-zero JSON code. */
+export function upstreamFailure(data: unknown): { code: number; msg: string } | undefined {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return undefined;
+  const code = Number((data as { code?: unknown }).code);
+  if (!Number.isFinite(code) || code === 0) return undefined;
+  const msg = (data as { msg?: unknown }).msg;
+  return { code, msg: typeof msg === 'string' ? msg : '' };
+}
+
 export interface OperationOptions {
   write?: boolean;
   /** The endpoint requires a login, so reject locally when no token exists. */
@@ -59,11 +68,27 @@ export async function execute(
       if (!/^y(?:es)?$/iu.test(answer.trim())) return { ok: true, status: 'cancelled', command };
     }
     const data = await client.call(request, { auth: options.auth, suppressAuth: options.suppressAuth });
-    return { ok: true, status: 'success', command, data };
+    return settle(command, data);
   }
   if (globals.dryRun) throw new LiandiError('--dry-run only applies to write operations; omit it for reads', 'INVALID_INPUT', 2);
   const data = await client.call(request, { auth: options.auth, suppressAuth: options.suppressAuth });
-  return { ok: true, status: 'success', command, data };
+  return settle(command, data);
+}
+
+/**
+ * code 10 means "two-factor required": it is an intermediate login step, not a
+ * failure, and its session token is what the 2fa command consumes next.
+ */
+function settle(command: string, data: unknown): OutputEnvelope {
+  const failure = upstreamFailure(data);
+  if (!failure) return { ok: true, status: 'success', command, data };
+  if (command === 'auth.login' && failure.code === 10) {
+    return {
+      ok: true, status: 'success', command, data,
+      hint: 'Two-factor required: run "liandi auth 2fa --session-token <token> --code <6 digits>"',
+    };
+  }
+  throw new LiandiError(failure.msg || `API returned code ${failure.code}`, `API_CODE_${failure.code}`, 1, redact(data));
 }
 
 export function errorEnvelope(error: unknown, command?: string): OutputEnvelope {
