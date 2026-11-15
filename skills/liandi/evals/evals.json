@@ -1,0 +1,38 @@
+{
+  "skill_name": "liandi",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我从当前目录的 announcement.md 拟一篇链滴帖子，标题“命令行工具发布”，标签为 CLI 和 Markdown。先让我确认，绝对不要实际发布。",
+      "expected_output": "使用正文文件生成发帖 dry-run 预览，明确未发送，不执行真实写请求。",
+      "files": [],
+      "expectations": [
+        "Uses liandi article post with --content-file and --dry-run",
+        "Does not send the post (no --yes) and does not claim publication or invent an article ID",
+        "Asks for the missing file instead of inventing article content"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我要在自动化任务里取链滴热议榜第一页，后续程序只接受 JSON，给出正确的调用方式和返回结构说明。",
+      "expected_output": "使用 articles latest --sort hot -p 1 -j，并解释统一 JSON 信封。",
+      "files": [],
+      "expectations": [
+        "Uses article list with hot sort, page 1 and JSON output",
+        "Explains that the upstream response is inside the data field",
+        "Does not suggest an unsupported page-size option"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "把链滴的提及我的通知全标成已读吧。这是无人值守的脚本，token 已在环境变量中，别问交互问题。",
+      "expected_output": "先展示 notifications read at 的 dry-run，明确该 GET 会修改状态；无交互时使用 -y 执行已确认的请求。",
+      "files": [],
+      "expectations": [
+        "Recognizes notice read at as a write despite its GET method",
+        "Requires a dry run before --yes",
+        "Keeps LIANDI_TOKEN as an API token, not a login session token"
+      ]
+    }
+  ]
+}

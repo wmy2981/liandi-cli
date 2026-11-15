@@ -1,0 +1,60 @@
+{
+  "name": "liandi",
+  "version": "0.1.0",
+  "description": "Human and agent friendly CLI for the ld246.com community API",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "liandi": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skills",
+    "README.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy-skill.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "pretest": "npm run build",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "prepack": "npm run build"
+  },
+  "keywords": [
+    "ld246",
+    "liandi",
+    "cli",
+    "api",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wmy2981/liandi-cli.git"
+  },
+  "bugs": {
+    "url": "https://github.com/wmy2981/liandi-cli/issues"
+  },
+  "homepage": "https://github.com/wmy2981/liandi-cli#readme",
+  "dependencies": {
+    "commander": "^14.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@vitest/coverage-v8": "^4.0.18",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.18"
+  }
+}
