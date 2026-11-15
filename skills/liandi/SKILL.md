@@ -5,7 +5,7 @@ description: Operate ld246.com (链滴) through the liandi CLI for articles, com
 
 # Liandi CLI
 
-Use `liandi` for documented ld246.com API operations. Commands are short: `article list`, `article post`, `comment post`, `user me`, `notice unread`. Do not construct ad-hoc HTTP requests when a command exists. Read [references/commands.md](references/commands.md) when the exact command or option is unclear, or run `liandi --help` / `liandi <group> --help`.
+Use `liandi` for documented ld246.com API operations. If the command is not installed, run it as `npx liandi …`. Commands are short: `article list`, `article post`, `comment post`, `user me`, `notice unread`. Do not construct ad-hoc HTTP requests when a command exists. Read [references/commands.md](references/commands.md) when the exact command or option is unclear, or run `liandi --help` / `liandi <group> --help`.
 
 ## Workflow
 

@@ -41,10 +41,12 @@ describe('token resolution', () => {
 
 describe('config directory', () => {
   it('uses APPDATA on Windows and XDG elsewhere', () => {
-    expect(configHome({ APPDATA: 'C:\\Users\\me\\AppData\\Roaming' }, 'win32', '/home/me')).toBe('C:\\Users\\me\\AppData\\Roaming');
-    expect(configHome({ XDG_CONFIG_HOME: '/x' }, 'linux', '/home/me')).toBe('/x');
-    expect(configHome({}, 'darwin', '/Users/me')).toBe('/Users/me/.config');
-    expect(configHome({}, 'win32', 'C:\\Users\\me')).toBe('C:\\Users\\me/.config');
+    // Normalize separators: path.join follows the host platform.
+    const norm = (value: string) => value.replace(/\\/gu, '/');
+    expect(norm(configHome({ APPDATA: 'C:/Users/me/AppData/Roaming' }, 'win32', '/home/me'))).toBe('C:/Users/me/AppData/Roaming');
+    expect(norm(configHome({ XDG_CONFIG_HOME: '/x' }, 'linux', '/home/me'))).toBe('/x');
+    expect(configHome({}, 'darwin', '/Users/me')).toBe(join('/Users/me', '.config'));
+    expect(norm(configHome({}, 'win32', '/Users/me'))).toBe('/Users/me/.config');
   });
 });
 
