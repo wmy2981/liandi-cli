@@ -17,7 +17,8 @@ export interface TokenResolution {
 /** Deliberately small .env parser: token configuration does not need shell evaluation. */
 export function parseEnv(text: string): Environment {
   const result: Environment = {};
-  for (const line of text.split(/\r?\n/u)) {
+  // Strip a UTF-8 BOM: Windows editors commonly add one.
+  for (const line of text.replace(/^\uFEFF/u, '').split(/\r?\n/u)) {
     const match = line.match(/^\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/u);
     if (!match || !match[1]) continue;
     let value = match[2] ?? '';
@@ -47,17 +48,23 @@ function readEnv(path: string, label: string): Environment {
   }
 }
 
+/** Per-user config directory: %APPDATA% on Windows, XDG elsewhere. */
+export function configHome(env: Environment, platform = process.platform, home = homedir()): string {
+  if (platform === 'win32' && env.APPDATA) return env.APPDATA;
+  return env.XDG_CONFIG_HOME || join(home, '.config');
+}
+
 export function resolveToken(
   flag: string | undefined,
   env: Environment,
   cwd = process.cwd(),
-  configHome = env.XDG_CONFIG_HOME || join(homedir(), '.config'),
+  home = configHome(env),
 ): TokenResolution {
   if (flag?.trim()) return { token: flag.trim(), source: 'flag' };
   if (env.LIANDI_TOKEN?.trim()) return { token: env.LIANDI_TOKEN.trim(), source: 'environment' };
   const local = readEnv(join(cwd, '.env'), 'local').LIANDI_TOKEN?.trim();
   if (local) return { token: local, source: 'local' };
-  const global = readEnv(join(configHome, 'liandi', '.env'), 'global').LIANDI_TOKEN?.trim();
+  const global = readEnv(join(home, 'liandi', '.env'), 'global').LIANDI_TOKEN?.trim();
   if (global) return { token: global, source: 'global' };
   return {};
 }

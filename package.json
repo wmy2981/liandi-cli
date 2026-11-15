@@ -31,14 +31,17 @@
     "pretest": "npm run build",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "pack:check": "node scripts/pack-check.mjs",
+    "prepublishOnly": "npm run typecheck && npm test && node scripts/pack-check.mjs"
   },
   "keywords": [
     "ld246",
     "liandi",
     "cli",
     "api",
-    "agent"
+    "agent",
+    "链滴"
   ],
   "repository": {
     "type": "git",
@@ -56,5 +59,8 @@
     "@vitest/coverage-v8": "^4.0.18",
     "typescript": "^5.9.3",
     "vitest": "^4.0.18"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { baseUrl, parseEnv, resolveToken } from '../src/config.js';
+import { baseUrl, configHome, parseEnv, resolveToken } from '../src/config.js';
 
 function config(local?: string, global?: string) {
   const cwd = mkdtempSync(join(tmpdir(), 'liandi-local-'));
@@ -28,9 +28,23 @@ describe('token resolution', () => {
     expect(resolveToken(undefined, { LIANDI_TOKEN: ' ' }, cwd, home)).toEqual({ token: 'local', source: 'local' });
     expect(parseEnv("A='x#y'\nB=\"z\\n\"\nC=value").A).toBe('x#y');
   });
+  it('reads .env files saved with a BOM and CRLF line endings', () => {
+    const { cwd, home } = config('\uFEFFLIANDI_TOKEN=win-token\r\nOTHER=x\r\n');
+    expect(resolveToken(undefined, {}, cwd, home)).toEqual({ token: 'win-token', source: 'local' });
+  });
+
   it('does not fall back when files are absent', () => {
     const { cwd, home } = config();
     expect(resolveToken(undefined, {}, cwd, home)).toEqual({});
+  });
+});
+
+describe('config directory', () => {
+  it('uses APPDATA on Windows and XDG elsewhere', () => {
+    expect(configHome({ APPDATA: 'C:\\Users\\me\\AppData\\Roaming' }, 'win32', '/home/me')).toBe('C:\\Users\\me\\AppData\\Roaming');
+    expect(configHome({ XDG_CONFIG_HOME: '/x' }, 'linux', '/home/me')).toBe('/x');
+    expect(configHome({}, 'darwin', '/Users/me')).toBe('/Users/me/.config');
+    expect(configHome({}, 'win32', 'C:\\Users\\me')).toBe('C:\\Users\\me/.config');
   });
 });
 

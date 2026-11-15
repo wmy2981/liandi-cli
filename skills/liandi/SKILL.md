@@ -44,6 +44,18 @@ Use `liandi` for documented ld246.com API operations. Commands are short: `artic
 - Update an article only after `article source <id>`; retain its `articleType` via `--type`.
 - Reviewing a preview never needs a token, but actually sending does: run `--dry-run` first even before you have credentials.
 
+## Not supported
+
+Only the documented v2 endpoints exist. These requests cannot be fulfilled, so say so plainly instead of improvising with another endpoint:
+
+- Deleting an article or comment (no delete endpoint; the user must use the web UI).
+- Like, thank, good/bad vote, favorite/unfavorite, follow/unfollow, poll or reward writes.
+- Search, image/attachment/avatar upload, profile or password edits, point transfers, check-in, direct messages.
+- Custom page size (fixed at 20) and captcha images (`/captcha/login` returns an image, not JSON).
+- Persisting a login session: only API Tokens are supported.
+
+Writable operations are exactly: `article post`, `article edit` (own), `comment post`, `comment edit` (own), `notice read`, `auth login`, `auth 2fa`, `auth logout`.
+
 ## Missing or ambiguous input
 
 When a requested file, ID, tag, or domain is absent or ambiguous, stop and ask rather than inventing content or guessing an identifier. A short path typo should be reported, not silently replaced with a similar-looking file. Never fabricate article bodies, titles, tags, or returned IDs; if a write cannot be previewed truthfully, say so instead of producing a plausible-looking result.

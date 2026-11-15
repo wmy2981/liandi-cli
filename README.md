@@ -14,23 +14,44 @@
 
 ## 安装与运行
 
-发布 npm 后：
+需要 Node.js 20 或更高版本（Windows、macOS、Linux 均可）。
 
 ```sh
+# 不安装，直接用（每次取最新版）
 npx liandi --help
-# 或
+
+# 或全局安装，之后直接敲 liandi
 npm install -g liandi
 liandi --help
 ```
 
-本地开发：
+> 目前尚未发布到 npm registry，因此 `npx liandi` / `npm i -g liandi` 暂时不可用，需先完成发布（见文末“发布到 npm”）。在此之前可用本地方式：
 
 ```sh
-npm install
-npm run build
-node dist/cli.js --help
-# 也可以在本目录执行 npm link，之后使用 liandi
+git clone https://github.com/wmy2981/liandi-cli.git
+cd liandi-cli
+npm install && npm run build
+npm link          # 之后全局可用 liandi
+# 或者直接跑：node dist/cli.js --help
 ```
+
+### 各平台配置位置
+
+| 平台 | 全局 `.env` 路径 |
+| --- | --- |
+| Linux / macOS | `$XDG_CONFIG_HOME/liandi/.env`，未设置时为 `~/.config/liandi/.env` |
+| Windows | `%APPDATA%\liandi\.env`（无 APPDATA 时回退到 `~/.config/liandi/.env`） |
+
+当前目录的 `./.env` 优先于全局配置。`.env` 支持 CRLF 与 BOM（Windows 编辑器常见）。
+
+Windows PowerShell 里临时指定 token：
+
+```powershell
+$env:LIANDI_TOKEN = "你的 API Token"
+liandi user me -j
+```
+
+令牌请写进 `.env`（`icacls` 收紧权限）而不是长期放在命令行，避免进入历史记录。
 
 ## API Token 与鉴权
 
@@ -228,13 +249,55 @@ npm pack --dry-run
 
 部分只读接口与最小写操作已在真实环境验证，结论（含返回结构细节、错误码映射、匿名访问被拒）见 [docs/live-verification.md](docs/live-verification.md)。
 
+## 不提供的能力
+
+只实现官方 v2 文档列出的接口，文档没有的一律不提供。以下常见需求**无法用本 CLI 完成**，请不要尝试或用其它接口拼凑：
+
+| 需求 | 状态 | 原因 |
+| --- | --- | --- |
+| 删除帖子 / 删除回帖 | 不提供 | 官方 v2 文档无删除接口；只能到网页端手动删除 |
+| 点赞 / 感谢 / 反对（good、bad、thank） | 不提供 | 无公开 v2 接口，仅有统计字段 |
+| 收藏 / 取消收藏、关注 / 取消关注 | 不提供 | 只能读取相关列表，无写入接口 |
+| 投票 / 悬赏相关写操作 | 不提供 | 无公开 v2 接口 |
+| 搜索帖子、用户、标签 | 不提供 | 官方文档未收录搜索接口 |
+| 上传图片 / 附件 / 头像 | 不提供 | 无公开 v2 上传接口 |
+| 修改昵称、头像、签名、密码、邮箱 | 不提供 | 属于设置页接口，未包含在客户端 API 文档中 |
+| 积分转账、签到、兑换邀请码 | 不提供 | 无公开 v2 接口 |
+| 私聊 / 聊天会话 | 不提供 | 无公开 v2 接口 |
+| 登录验证码图片 | 不提供 | `/captcha/login` 返回图片而非 JSON，本 CLI 只处理 JSON；需要时请在网页端完成登录 |
+| 自定义每页条数 | 不提供 | 服务端固定 20，只能翻页 |
+| 通过 API 登录后持久保存会话 | 不提供 | 只支持 API Token；登录接口仅用于验证凭据与两步验证 |
+
+可以做的写入只有：发帖、改帖（自己的）、发回帖、改回帖（自己的）、标记通知已读、登录/两步验证/登出。其余都是只读。
+
 ## 范围与限制
 
-- 只实现官方文档明确支持的 v2 API，不添加文档外接口。
+- 只实现官方文档明确支持的 v2 API，不添加文档外接口；删除、点赞、收藏等未收录能力见上表。
 - 上游列表页大小固定为 20；`users events` 的 `size` 范围为 1–64。
 - 请遵守官方使用原则，每个 IP 每分钟不超过 120 次请求；不要批量填充内容。
 - 官方 v2 线上实现与当前开源 Symphony 仓库存在差异，本 CLI 以官方 v2 文档为接口依据。
 - 尚未发布 npm；发布前 `npx liandi` 需要先将包发布到 npm registry。
+
+## 发布到 npm
+
+发布后 `npx liandi` 与 `npm i -g liandi` 即可在所有平台使用。步骤：
+
+```sh
+npm login                      # 需要 npm 账号，且建议开启 2FA
+npm whoami                     # 确认登录身份
+npm run typecheck && npm test  # 本地闸门
+node scripts/pack-check.mjs    # 打包安装冒烟测试
+npm publish                    # prepublishOnly 会再跑一遍检查
+```
+
+`npm publish` 需要 npm 账号与 2FA 一次性验证码，只能由仓库所有者执行。发布后建议核对：
+
+```sh
+npx liandi@latest --version
+npm view liandi version dist.tarball
+```
+
+包名 `liandi` 目前在 registry 上未被占用（2026-11-15 查询）；若已被抢注，可改用 `liandi-cli` 并把 `bin` 保持为 `liandi`。
 
 ## 开源
 
