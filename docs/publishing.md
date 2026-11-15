@@ -43,6 +43,15 @@ The workflow then:
 - Environment `npm` is referenced by the publish job. Add required reviewers there if you want a manual gate before publishing.
 - npm 2FA: use an automation token (or a granular token that bypasses 2FA), because a workflow cannot answer an OTP prompt.
 
+## Guard behaviour (verified)
+
+| Scenario | Result |
+| --- | --- |
+| Manual run without `publish` | checks pass, `npm pack --dry-run` runs, nothing published |
+| Tag on a commit outside `main` | job fails with `Tag commit is not on main. Merge to main before tagging.`; build and publish are skipped |
+| Tag whose version differs from `package.json` | fails with `version check failed: tag vX.Y.Z does not match package version; expected vA.B.C`; publish is skipped |
+| Version already on the registry | publish step stops with `Version … is already published. Bump the version first.` |
+
 ## Dry run
 
 Run the workflow manually (`Actions → Release → Run workflow`) with `publish` left off. It performs every check and runs `npm pack --dry-run` without publishing — useful to validate changes to the pipeline itself.
