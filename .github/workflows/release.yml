@@ -89,6 +89,9 @@ jobs:
           cache: npm
           registry-url: https://registry.npmjs.org
 
+      # prepack/prepublishOnly run the build, so dev dependencies are required.
+      - run: npm ci
+
       - name: Decide whether to publish
         id: gate
         run: |
