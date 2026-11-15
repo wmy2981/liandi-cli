@@ -19,7 +19,7 @@ describe('skill installer', () => {
 
     expect(result.destination).toBe(destination);
     expect(await readFile(join(destination, 'SKILL.md'), 'utf8')).toContain('name: liandi');
-    expect(await readFile(join(destination, 'references', 'commands.md'), 'utf8')).toContain('liandi articles create');
+    expect(await readFile(join(destination, 'references', 'commands.md'), 'utf8')).toContain('liandi article list');
     await expect(readFile(join(destination, 'stale.txt'), 'utf8')).rejects.toThrow();
   });
 });

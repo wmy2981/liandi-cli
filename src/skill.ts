@@ -28,5 +28,5 @@ export async function installSkill(home?: string): Promise<{ destination: string
   } finally {
     await rm(temporary, { recursive: true, force: true });
   }
-  return { destination, files: ['SKILL.md', 'references/commands.md', 'evals/evals.json'] };
+  return { destination, files: ['SKILL.md', 'references/commands.md'] };
 }
