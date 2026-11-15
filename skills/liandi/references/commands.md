@@ -82,6 +82,10 @@ liandi skill install --yes
 
 Installs or replaces only `~/.agents/skills/liandi` from the installed package.
 
+## Response shapes (verified live)
+
+List endpoints return an object, not a bare array: `data.data = { pagination, articles | tags | domains | comments }`. Paged lists return 20 items per page. `article get` returns `data.data = { pagination, article }`, with comments in `article.articleComments` and the body in `article.articleContent`. `comment post` returns only `{ code: 0 }` without the new id, so re-read the article to find it. Comment content is returned as HTML even when posted as Markdown.
+
 ## Examples
 
 ```sh
