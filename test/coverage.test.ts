@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { run, type IO } from '../src/program.js';
+import { run } from '../src/program.js';
+import type { IO } from '../src/runtime.js';
 import { definitions } from '../src/catalog.js';
 import type { ApiRequest } from '../src/client.js';
 
@@ -89,8 +90,8 @@ describe('documented API command coverage', () => {
     it(`previews ${entry.args.join(' ')} without sending`, async () => {
       let out = '', err = '';
       const io: IO = {
-        stdout: { isTTY: true, write(text) { out += text; return true; } },
-        stderr: { isTTY: true, write(text) { err += text; return true; } },
+        stdout: { isTTY: true, write(text: string) { out += text; return true; } },
+        stderr: { isTTY: true, write(text: string) { err += text; return true; } },
         stdin: { isTTY: true },
       };
       expect(await run([...entry.args, '-d', '-j'], { io, env: {} }), err).toBe(0);
@@ -103,7 +104,7 @@ describe('documented API command coverage', () => {
   it('rejects --yes and --dry-run for reads', async () => {
     for (const args of [['article', 'list'], ['time'], ['user', 'me']]) {
       let err = '';
-      const io: IO = { stdout: { write: () => true }, stderr: { write(text) { err += text; return true; } }, stdin: { isTTY: true } };
+      const io: IO = { stdout: { write: () => true }, stderr: { write(text: string) { err += text; return true; } }, stdin: { isTTY: true } };
       expect(await run([...args, '-y', '-j'], { io, env: {} })).toBe(2);
       expect(JSON.parse(err).error.code).toBe('INVALID_INPUT');
       err = '';

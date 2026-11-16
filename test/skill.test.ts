@@ -9,6 +9,12 @@ describe('skill installer', () => {
     expect(await readFile(join(skillPaths().source, 'SKILL.md'), 'utf8')).toContain('name: liandi');
   });
 
+  it('reports an unusable destination as a skill install error', async () => {
+    const homeFile = join(await mkdtemp(join(tmpdir(), 'liandi-skill-file-')), 'not-a-directory');
+    await writeFile(homeFile, 'occupied');
+    await expect(installSkill(homeFile)).rejects.toMatchObject({ code: 'INSTALL_ERROR' });
+  });
+
   it('replaces an existing installation and removes stale files', async () => {
     const home = await mkdtemp(join(tmpdir(), 'liandi-skill-home-'));
     const destination = join(home, '.agents', 'skills', 'liandi');

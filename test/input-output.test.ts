@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { boolean, content, contentType, positiveInteger, size } from '../src/input.js';
+import { boolean, content, contentType, encodeSegment, integer, positiveInteger, size } from '../src/input.js';
 import { formatOutput, redact } from '../src/output.js';
 
 describe('input', () => {
@@ -26,6 +26,13 @@ describe('input', () => {
     expect(() => contentType('Markdown')).toThrow();
     expect(boolean('false')).toBe(false);
     expect(() => boolean('0')).toThrow();
+  });
+  it('rejects numbers that lose precision and path segments that change the endpoint', () => {
+    expect(integer('-3')).toBe(-3);
+    expect(() => integer('1000000000000000000000')).toThrow('out of range');
+    expect(encodeSegment('C++', 'Tag')).toBe('C%2B%2B');
+    expect(() => encodeSegment('..', 'Article ID')).toThrow();
+    expect(() => encodeSegment('', 'Article ID')).toThrow();
   });
 });
 

@@ -1,12 +1,13 @@
 import { Command, CommanderError } from 'commander';
 import { readFileSync } from 'node:fs';
+import { Writable } from 'node:stream';
 import { createInterface } from 'node:readline/promises';
-import { stdin, stdout } from 'node:process';
+import { stdin, stderr } from 'node:process';
 import { baseUrl, resolveToken } from './config.js';
 import { definitions, readableNoticeType } from './catalog.js';
 import { LiandiError } from './errors.js';
 import { defaultIO, errorEnvelope, execute, type GlobalOptions, type IO } from './runtime.js';
-import { formatOutput, redact } from './output.js';
+import { formatOutput, redact, type OutputEnvelope } from './output.js';
 import { installSkill, skillPaths } from './skill.js';
 
 interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string }
@@ -46,6 +47,20 @@ function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } 
 
 const WRITE = new Set(['post', 'edit', 'read', 'login', '2fa', 'logout', 'install']);
 
+/** Map a typed `group.action` path to the definition name used in envelopes. */
+function definitionName(typed: string): string | undefined {
+  if (typed === 'time') return 'system.time';
+  const [group, action] = typed.split('.');
+  if (!group || !action) return undefined;
+  return [`${group}s.${action}`, `${group}.${action}`].find(candidate => candidate in definitions);
+}
+
+/** Best-effort command label for errors raised before Commander resolves the command. */
+function typedCommand(argv: string[]): string {
+  const typed = argv.filter(part => !part.startsWith('-')).slice(0, 2).join('.') || 'liandi';
+  return definitionName(typed) ?? typed;
+}
+
 export function isWriteCommand(argv: string[]): boolean {
   const [group, action] = argv.filter(part => !part.startsWith('-'));
   if (group === undefined) return false;
@@ -53,6 +68,45 @@ export function isWriteCommand(argv: string[]): boolean {
   if (group === 'time') return false;
   return WRITE.has(action);
 }
+
+/**
+ * Read one password line from stdin without echoing it. A closed or empty stdin
+ * must fail loudly: `readline` would otherwise leave the prompt unsettled.
+ */
+async function readPassword(): Promise<string> {
+  const interactive = Boolean(stdin.isTTY);
+  // Only humans need the prompt; a pipe must keep stderr clean for JSON errors.
+  if (interactive) stderr.write('Password: ');
+  // readline echoes keystrokes to `output`; a discarding sink keeps them off screen.
+  const sink = new Writable({ write: (_chunk, _encoding, callback) => { callback(); } });
+  const rl = createInterface({ input: stdin, output: sink, terminal: Boolean(stdin.isTTY) });
+  try {
+    const password = await new Promise<string>((resolve, reject) => {
+      rl.once('close', () => { reject(new LiandiError('No password on stdin', 'INVALID_INPUT', 2)); });
+      rl.question('').then(resolve, reject);
+    });
+    if (!password) throw new LiandiError('No password on stdin', 'INVALID_INPUT', 2);
+    return password;
+  } finally {
+    rl.close();
+    if (interactive) stderr.write('\n');
+  }
+}
+
+/** Printed by every command: these flags are parsed before Commander sees them. */
+const GLOBAL_HELP = `
+Global options (can appear before or after commands):
+  -t, --token <token>       API token (highest-priority source)
+  -b, --base-url <url>      API server (default: https://ld246.com)
+  -j, --json                Uniform JSON output for agents
+  -d, --dry-run             Preview a write; never send it
+  -y, --yes                 Execute a write without interactive confirmation
+  -v, --version             Show version
+  -h, --help                Show help
+
+Reads never use --dry-run/--yes. Writes always show a preview before confirmation.
+Authentication: --token > LIANDI_TOKEN > ./.env > ~/.config/liandi/.env
+Run "liandi <group> --help" for subcommands.`;
 
 export function createProgram(options: ProgramOptions = {}): Command {
   const env = options.env ?? process.env;
@@ -69,19 +123,7 @@ export function createProgram(options: ProgramOptions = {}): Command {
       // Errors are rendered once, by run(), so Commander must not print them itself.
       outputError: () => {},
     })
-    .addHelpText('after', `
-Global options (can appear before or after commands):
-  -t, --token <token>       API token (highest-priority source)
-  -b, --base-url <url>      API server (default: https://ld246.com)
-  -j, --json                Uniform JSON output for agents
-  -d, --dry-run             Preview a write; never send it
-  -y, --yes                 Execute a write without interactive confirmation
-  -v, --version             Show version
-  -h, --help                Show help
-
-Reads never use --dry-run/--yes. Writes always show a preview before confirmation.
-Authentication: --token > LIANDI_TOKEN > ./.env > ~/.config/liandi/.env
-Run "liandi <group> --help" for subcommands.`).exitOverride();
+    .addHelpText('after', GLOBAL_HELP).exitOverride();
 
   const perform = async (name: string, args: string[], values: Values): Promise<void> => {
     lastCommand = name;
@@ -182,8 +224,7 @@ Run "liandi <group> --help" for subcommands.`).exitOverride();
     .option('--captcha <captcha>', 'Captcha if requested by the server'), async (v: Values) => {
       if (v.passwordStdin) {
         if (v.password !== undefined) throw new LiandiError('Use either --password or --password-stdin, not both', 'INVALID_INPUT', 2);
-        const rl = createInterface({ input: stdin });
-        try { v.password = await rl.question('Password: '); } finally { rl.close(); }
+        v.password = await readPassword();
       }
       if (v.password === undefined) throw new LiandiError('Provide --password-stdin or --password <password>', 'INVALID_INPUT', 2);
       return perform('auth.login', [], v);
@@ -205,8 +246,12 @@ Run "liandi <group> --help" for subcommands.`).exitOverride();
         return;
       }
       if (!globals.yes) {
-        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false) + '\n');
-        if (!io.stdin.isTTY || !io.stdout.isTTY) throw new LiandiError('Confirmation required. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2);
+        const interactive = Boolean(io.stdin.isTTY && io.stdout.isTTY);
+        const running: OutputEnvelope = { ok: true, status: 'dry-run', command: lastCommand, data: preview };
+        // stdout stays a single envelope in JSON mode; see runtime.execute.
+        if (!globals.json) io.stdout.write(formatOutput(running, false) + '\n');
+        else if (interactive) io.stderr.write(formatOutput(running, true) + '\n');
+        if (!interactive) throw new LiandiError('Confirmation required. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2, preview);
         const confirm = io.confirm ?? (async (prompt: string) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           try { return await rl.question(prompt); } finally { rl.close(); }
@@ -226,9 +271,16 @@ Run "liandi <group> --help" for subcommands.`).exitOverride();
     const userArgs = parseOptions?.from === 'user' ? raw : raw.slice(2);
     const { globals, rest } = parseFlags(userArgs);
     invocationGlobals = globals;
-    lastCommand = rest.filter(part => !part.startsWith('-')).slice(0, 2).join('.') || 'liandi';
+    lastCommand = typedCommand(rest);
     return originalParseAsync(rest, { from: 'user' });
   };
+  const addGlobalHelp = (parent: Command): void => {
+    for (const child of parent.commands) {
+      child.addHelpText('after', GLOBAL_HELP);
+      addGlobalHelp(child);
+    }
+  };
+  addGlobalHelp(program);
   return program;
 }
 
@@ -240,14 +292,17 @@ function normalizeError(error: unknown): unknown {
 
 export async function run(argv: string[], options: ProgramOptions = {}): Promise<number> {
   const io = options.io ?? defaultIO;
+  // Reset first: global-flag errors are thrown before the command is resolved.
+  lastCommand = typedCommand(argv);
   const json = (() => { try { return parseFlags(argv).globals.json ?? false; } catch { return argv.includes('--json') || argv.includes('-j'); } })();
   try {
     await createProgram(options).parseAsync(argv, { from: 'user' });
     return 0;
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.version'].includes(error.code)) return 0;
-    const envelope = errorEnvelope(normalizeError(error), lastCommand);
-    io.stderr.write(formatOutput(envelope, json) + '\n');
-    return envelope.status === 'error' ? (normalizeError(error) as LiandiError).exitCode : 1;
+    const known = normalizeError(error);
+    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), json) + '\n');
+    // Unexpected exceptions are runtime failures: never report them as success.
+    return known instanceof LiandiError ? known.exitCode : 1;
   }
 }

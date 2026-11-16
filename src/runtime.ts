@@ -1,6 +1,7 @@
 import { createInterface } from 'node:readline/promises';
 import { stdin, stdout, stderr } from 'node:process';
 import { LiandiClient, type ApiRequest } from './client.js';
+import { baseUrl } from './config.js';
 import { LiandiError } from './errors.js';
 import { formatOutput, redact, type OutputEnvelope } from './output.js';
 
@@ -47,7 +48,7 @@ export async function execute(
   env: NodeJS.ProcessEnv = process.env,
   options: OperationOptions = {},
 ): Promise<OutputEnvelope> {
-  const client = new LiandiClient({ baseUrl: globals.baseUrl ?? env.LIANDI_BASE_URL ?? 'https://ld246.com', version, token: globals.token });
+  const client = new LiandiClient({ baseUrl: baseUrl(env, globals.baseUrl), version, token: globals.token });
   const preview = () => redact({
     method: request.method,
     url: client.url(request),
@@ -56,9 +57,14 @@ export async function execute(
   if (options.write) {
     if (globals.dryRun) return { ok: true, status: 'dry-run', command, data: preview() };
     if (!globals.yes) {
-      io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command, data: preview() }, globals.json ?? false) + '\n');
-      if (!io.stdin.isTTY || !io.stdout.isTTY) {
-        throw new LiandiError('Confirmation required in a non-interactive terminal. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2);
+      const interactive = Boolean(io.stdin.isTTY && io.stdout.isTTY);
+      const running: OutputEnvelope = { ok: true, status: 'dry-run', command, data: preview() };
+      // stdout stays a single envelope in JSON mode; the preview is for the human
+      // that has to confirm, and the error below carries it for everyone else.
+      if (!globals.json) io.stdout.write(formatOutput(running, false) + '\n');
+      else if (interactive) io.stderr.write(formatOutput(running, true) + '\n');
+      if (!interactive) {
+        throw new LiandiError('Confirmation required in a non-interactive terminal. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2, preview());
       }
       const confirm = io.confirm ?? (async (prompt: string) => {
         const rl = createInterface({ input: process.stdin, output: process.stdout });
@@ -100,7 +106,7 @@ export function errorEnvelope(error: unknown, command?: string): OutputEnvelope 
     error: {
       code: known ? error.code : 'INTERNAL_ERROR',
       message: error instanceof Error ? error.message : 'Unknown error',
-      ...(known && error.details !== undefined ? { details: error.details } : {}),
+      ...(known && error.details !== undefined ? { details: redact(error.details) } : {}),
     },
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
-import { run, type IO } from '../src/program.js';
+import { run } from '../src/program.js';
+import type { IO } from '../src/runtime.js';
 
 function harness() {
   const io = {
@@ -12,7 +13,7 @@ function harness() {
 }
 
 describe('CLI integration', () => {
-  it('covers all documented paths and accepts globals after arguments', async () => {
+  it('rejects --dry-run on a read even when global flags come last', async () => {
     const { io, env } = harness();
     expect(await run(['article', 'list', '--sort', 'hot', '-p', '2', '-j', '--dry-run'], { io, env })).toBe(2);
     const value = JSON.parse(io.err);
@@ -48,6 +49,26 @@ describe('CLI integration', () => {
     const { io, env } = harness();
     expect(await run(['notice', 'read', 'wallet', '-d', '-j'], { io, env })).toBe(2);
     expect(JSON.parse(io.err).error.code).toBe('INVALID_INPUT');
+  });
+  it('never reports an unexpected internal failure as success', async () => {
+    const { io, env } = harness();
+    const failing: IO = {
+      stdout: { isTTY: true, write() { throw new Error('stdout is gone'); } },
+      stderr: io.stderr,
+      stdin: io.stdin,
+    };
+    expect(await run(['article', 'post', '--title', 't', '--tags', 'a', '-c', 'x', '-d', '-j'], { io: failing, env })).toBe(1);
+    expect(JSON.parse(io.err)).toMatchObject({ ok: false, error: { code: 'INTERNAL_ERROR', message: 'stdout is gone' } });
+  });
+  it('labels usage errors with the same command name as successful runs', async () => {
+    const { io, env } = harness();
+    expect(await run(['article', 'list', '-y', '-j'], { io, env })).toBe(2);
+    expect(JSON.parse(io.err).command).toBe('articles.list');
+  });
+  it('documents the global flags in subcommand help', async () => {
+    const { io, env } = harness();
+    expect(await run(['article', 'post', '--help'], { io, env })).toBe(0);
+    for (const flag of ['--token', '--base-url', '--json', '--dry-run', '--yes']) expect(io.out).toContain(flag);
   });
   it('supports short global and help flags', async () => {
     const { io, env } = harness();

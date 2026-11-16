@@ -20,13 +20,18 @@ export async function installSkill(home?: string): Promise<{ destination: string
   }
   const parent = join(destination, '..');
   const temporary = join(parent, `.liandi-${process.pid}-${Date.now()}`);
-  await mkdir(parent, { recursive: true });
   try {
+    await mkdir(parent, { recursive: true });
     await cp(source, temporary, { recursive: true });
     await rm(destination, { recursive: true, force: true });
     await rename(temporary, destination);
+  } catch (error) {
+    if (error instanceof LiandiError) throw error;
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new LiandiError(`Cannot install the liandi skill: ${reason}`, 'INSTALL_ERROR');
   } finally {
-    await rm(temporary, { recursive: true, force: true });
+    // Cleanup must never mask the real error.
+    await rm(temporary, { recursive: true, force: true }).catch(() => undefined);
   }
   return { destination, files: ['SKILL.md', 'references/commands.md'] };
 }

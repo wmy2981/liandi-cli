@@ -16,7 +16,9 @@ export async function content(inline?: string, file?: string): Promise<string> {
 
 export function integer(value: string): number {
   if (!/^-?\d+$/u.test(value)) throw new LiandiError(`Expected an integer, received: ${value}`, 'INVALID_INPUT', 2);
-  return Number(value);
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) throw new LiandiError(`Integer out of range: ${value}`, 'INVALID_INPUT', 2);
+  return parsed;
 }
 
 export function positiveInteger(value: string): number {
@@ -46,5 +48,7 @@ export function boolean(value: string): boolean {
 
 export function encodeSegment(value: string, label: string): string {
   if (!value) throw new LiandiError(`${label} cannot be empty`, 'INVALID_INPUT', 2);
+  // "." and ".." survive encoding and would resolve to a different endpoint.
+  if (value === '.' || value === '..') throw new LiandiError(`${label} cannot be "." or ".."`, 'INVALID_INPUT', 2);
   return encodeURIComponent(value);
 }

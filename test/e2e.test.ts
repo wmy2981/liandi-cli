@@ -1,6 +1,10 @@
 import { spawn } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage } from 'node:http';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+
+/** Never hard-code the version: `npm version` bumps it before this suite runs. */
+const packageVersion = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version;
 
 let url: string;
 let server: ReturnType<typeof createServer>;
@@ -21,7 +25,7 @@ beforeAll(async () => {
 });
 afterAll(async () => { await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())); });
 
-function cli(args: string[]) {
+function cli(args: string[], { input }: { input?: string } = {}) {
   return new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(process.execPath, ['dist/cli.js', ...args, '-j'], { env: { PATH: process.env.PATH ?? '', LIANDI_TOKEN: 'fake', LIANDI_BASE_URL: url } });
     let stdout = '', stderr = '';
@@ -29,6 +33,7 @@ function cli(args: string[]) {
     child.stderr.on('data', (data: Buffer) => { stderr += data.toString(); });
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout, stderr }));
+    child.stdin.end(input ?? '');
   });
 }
 
@@ -40,7 +45,7 @@ describe('built CLI with a local HTTP server', () => {
     const request = requests.at(-1)!;
     expect(request.url).toBe('/api/v2/articles/latest?p=2');
     expect(request.headers.authorization).toBe('token fake');
-    expect(request.headers['user-agent']).toMatch(/^liandi\/0\.1\.0 /);
+    expect(request.headers['user-agent']).toBe(`liandi/${packageVersion} (+https://github.com/wmy2981/liandi-cli)`);
   });
   it('executes an approved write exactly once with API token and JSON body', async () => {
     const result = await cli(['comment', 'post', '123', '--content', '测试', '--yes']);
@@ -50,6 +55,20 @@ describe('built CLI with a local HTTP server', () => {
     expect(request.headers.authorization).toBe('token fake');
     expect(JSON.parse(request.body)).toMatchObject({ articleId: '123', commentContent: '测试', commentContentType: 'markdown' });
     expect(result.stdout).not.toContain('fake');
+  });
+  it('reads a password from stdin without echoing or misusing it', async () => {
+    const preview = await cli(['auth', 'login', '-u', 'alice', '--password-stdin', '-d'], { input: 'piped-secret\n' });
+    expect(preview.code, preview.stderr).toBe(0);
+    expect(JSON.parse(preview.stdout).data.body).toMatchObject({ userName: 'alice', userPassword: '[REDACTED]' });
+    expect(preview.stdout + preview.stderr).not.toContain('piped-secret');
+  });
+  it('fails with a JSON error when --password-stdin has no input', async () => {
+    const before = requests.length;
+    const result = await cli(['auth', 'login', '-u', 'alice', '--password-stdin', '-y']);
+    expect(result.code).toBe(2);
+    expect(JSON.parse(result.stderr)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
+    expect(result.stdout).toBe('');
+    expect(requests.length).toBe(before);
   });
   it('does not send a dry run or non-interactive unconfirmed write', async () => {
     const before = requests.length;

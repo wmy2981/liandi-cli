@@ -62,8 +62,8 @@ function start(args, { env = {}, cwd, pty = false, input } = {}) {
     child.stderr.on('data', data => { stderr += data.toString(); });
     child.on('error', reject);
     child.on('close', code => resolve({ code, stdout, stderr }));
-    if (input !== undefined) child.stdin.write(input);
-    else child.stdin.end();
+    // Always close stdin: an open pipe would let the CLI wait for input forever.
+    child.stdin.end(input ?? '');
   });
 }
 
@@ -224,7 +224,9 @@ await check('confirm: interactive yes sends once', async () => {
   const result = await start(['comment', 'post', '123', '-c', 'hi', '-j'], { pty: true, input: 'y\n' });
   assert(result.code === 0, `exit ${result.code} ${result.stderr.slice(0, 200)}`);
   assert(requests.length === before + 1, `requests ${requests.length - before}`);
+  // A pty merges both streams, so only the presence of the preview is checkable here.
   assert(result.stdout.includes('dry-run'), 'preview missing');
+  assert(result.stdout.includes('"status": "success"'), 'success envelope missing');
 });
 
 await check('confirm: interactive no cancels without request', async () => {
@@ -239,8 +241,44 @@ await check('confirm: non-interactive without -y is refused', async () => {
   const before = requests.length;
   const result = await start(['comment', 'post', '123', '-c', 'hi', '-j']);
   assert(result.code === 2, `exit ${result.code}`);
-  assert(json(result.stderr).error.code === 'CONFIRMATION_REQUIRED', 'wrong error');
+  const payload = json(result.stderr);
+  assert(payload.error.code === 'CONFIRMATION_REQUIRED', 'wrong error');
+  assert(payload.error.details?.url?.endsWith('/api/v2/comment'), 'error does not carry the preview');
+  assert(result.stdout === '', `stdout should stay empty, got ${result.stdout.slice(0, 80)}`);
   assert(requests.length === before, 'request sent');
+});
+
+await check('password: --password-stdin reads one line and never echoes it', async () => {
+  const result = await start(['auth', 'login', '-u', 'alice', '--password-stdin', '-d', '-j'], { input: 'piped-secret\n' });
+  assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
+  const payload = json(result.stdout);
+  assert(payload.status === 'dry-run', `status ${payload.status}`);
+  assert(payload.data.body.userPassword === '[REDACTED]', 'password not redacted');
+  assert(!result.stdout.includes('piped-secret') && !result.stderr.includes('piped-secret'), 'password echoed');
+});
+
+await check('password: --password-stdin with no input fails with exit 2', async () => {
+  const before = requests.length;
+  const result = await start(['auth', 'login', '-u', 'alice', '--password-stdin', '-y', '-j'], { input: '' });
+  assert(result.code === 2, `exit ${result.code}`);
+  assert(json(result.stderr).error.code === 'INVALID_INPUT', 'wrong error code');
+  assert(result.stdout === '', 'stdout should stay empty');
+  assert(requests.length === before, 'request sent without a password');
+});
+
+await check('password: --captcha is forwarded as a login field', async () => {
+  const result = await start(['auth', 'login', '-u', 'alice', '--password', 'x', '--captcha', 'abcd', '-d', '-j']);
+  assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
+  assert(json(result.stdout).data.body.captcha === 'abcd', 'captcha missing from the preview');
+});
+
+await check('output: stdout is always a single JSON document', async () => {
+  for (const args of [['time'], ['article', 'list'], ['notice', 'read', 'at', '-d']]) {
+    const result = await start([...args, '-j']);
+    assert(result.code === 0, `${args.join(' ')} -> ${result.code}`);
+    json(result.stdout);
+    assert(result.stdout.trim().startsWith('{') && result.stdout.trim().endsWith('}'), `${args.join(' ')}: stdout is not one document`);
+  }
 });
 
 // ---------------------------------------------------------------- validation
@@ -412,6 +450,7 @@ await check('meta: skill install refuses without -y in non-interactive mode', as
   const result = await start(['skill', 'install', '-j'], { env: { HOME: home } });
   assert(result.code === 2, `exit ${result.code}`);
   assert(json(result.stderr).error.code === 'CONFIRMATION_REQUIRED', 'wrong code');
+  assert(result.stdout === '', 'stdout should stay empty');
 });
 
 // ---------------------------------------------------------------- report
