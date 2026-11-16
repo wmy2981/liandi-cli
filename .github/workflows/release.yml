@@ -1,15 +1,15 @@
 name: Release
 
 # Publishing is tag-driven: pushing vX.Y.Z to main publishes to npm.
-# Manual runs are dry runs unless `publish` is explicitly enabled.
+# Manual runs publish too, but only from main; opt into a dry run explicitly.
 
 on:
   push:
     tags: ['v*.*.*']
   workflow_dispatch:
     inputs:
-      publish:
-        description: Actually publish to npm (leave off for a dry run)
+      dry_run:
+        description: Verify everything but skip npm publish (opt-in dry run)
         type: boolean
         default: false
 
@@ -94,11 +94,19 @@ jobs:
 
       - name: Decide whether to publish
         id: gate
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_TYPE: ${{ github.ref_type }}
+          REF: ${{ github.ref }}
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          if [ "${{ github.ref_type }}" = "tag" ] || [ "${{ inputs.publish }}" = "true" ]; then
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$DRY_RUN" = "true" ]; then
+            echo "mode=dry-run" >> "$GITHUB_OUTPUT"
+          elif [ "$REF_TYPE" = "tag" ] || [ "$REF" = "refs/heads/main" ]; then
             echo "mode=publish" >> "$GITHUB_OUTPUT"
           else
-            echo "mode=dry-run" >> "$GITHUB_OUTPUT"
+            echo "::error::Publishing is only allowed from main or from a release tag."
+            exit 1
           fi
           echo "version=${{ needs.guard.outputs.version }}" >> "$GITHUB_OUTPUT"
 
