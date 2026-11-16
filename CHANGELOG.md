@@ -12,3 +12,6 @@ Initial release.
 - Content input from an inline flag or a UTF-8 file; custom `liandi/<version>` User-Agent.
 - Non-zero upstream codes fail the command instead of reporting success; login `code 10` returns the 2FA hint.
 - Bundled agent skill, installed with `liandi skill install` into `~/.agents/skills/liandi`.
+- Unexpected internal failures exit `1` instead of `0`, and `--password-stdin` reads one masked line, failing with `INVALID_INPUT` (exit 2) when stdin is closed.
+- `-j` always writes exactly one JSON object to stdout: an interactive write preview goes to stderr, and a refused non-interactive write carries the preview in `error.details`.
+- Closing the pipe early (`liandi … | head`) ends the process without an EPIPE stack trace.

@@ -101,7 +101,7 @@ Error [AUTH_REQUIRED]: API token required. ...
 {
   "ok": true,
   "status": "success",
-  "command": "articles.latest",
+  "command": "articles.list",
   "data": {
     "code": 0,
     "msg": "",
@@ -110,7 +110,7 @@ Error [AUTH_REQUIRED]: API token required. ...
 }
 ```
 
-`data` 保留完整上游响应，不丢字段。`status` 可能是 `success`、`dry-run`、`cancelled`、`error`。错误示例：
+`data` 保留完整上游响应，不丢字段。`status` 可能是 `success`、`dry-run`、`cancelled`、`error`。无论成功、预览还是失败，stdout 只有一个 JSON 对象：写操作在交互确认时的预览会写到 stderr；非交互环境下缺少 `--yes` 时，预览会放进错误对象的 `details`。错误示例：
 
 ```json
 {
@@ -157,9 +157,9 @@ liandi article post --title "命令行工具发布" \
 - 不带 `--yes` 时显示预览并等待 `y`/`yes`；其他回答视为取消。
 - 非 TTY 环境未提供 `--yes` 会拒绝执行，不会卡在输入等待。
 - `--dry-run` 和 `--yes` 只适用于写操作，避免让读取命令的实际行为含糊。
-- `notifications read` 虽为 GET，仍会改变状态，必须按写操作确认。
+- `notice read` 虽为 GET，仍会改变状态，必须按写操作确认。
 - 官方说明 broadcast、wallet、sys-announce 通知拉取后自动已读，请注意这类读取的副作用。
-- `--token`、密码、两步验证码、登录返回 token 不出现在预览或成功输出中。仍需自行保护终端和日志。
+- `--token`、密码和两步验证码不出现在预览或成功输出中；`--password-stdin` 从标准输入读取一行且不回显。`auth login` 需要两步验证时会把服务端返回的会话 token 作为结果给出，供 `auth 2fa` 使用，请勿记录或粘贴。仍需自行保护终端和日志。
 
 ## 常用操作
 
@@ -201,7 +201,7 @@ liandi time
 
 ### 正文文件
 
-`-c, --content <text>` 和 `-f, --content-file <path>` 二选一。默认 `--content-type markdown`；HTML 用 `--content-type html`。发帖/更新支持 `--reward-content`、`--reward-point`，更新另需从 `edit-source` 获取的 `--type`。
+`-c, --content <text>` 和 `-f, --content-file <path>` 二选一。默认 `--content-type markdown`；HTML 用 `--content-type html`。发帖/更新支持 `--reward-content`、`--reward-point`，更新另需从 `article source` 获取的 `--type`。更新是整体覆盖：标题、标签、正文、激励区都会按本次命令的取值重新提交。
 
 ### 登录
 
@@ -228,7 +228,7 @@ liandi skill install --dry-run
 liandi skill install --yes
 ```
 
-安装或覆盖更新 `~/.agents/skills/liandi`，不修改其他技能目录。技能包含安全操作规则、命令参考与评测用例。
+安装或覆盖更新 `~/.agents/skills/liandi`，不修改其他技能目录。技能包含安全操作规则与命令参考（评测用例放在仓库的 `evals/` 目录，不会随包安装）。
 
 ## 开发
 
@@ -238,11 +238,11 @@ npm run typecheck
 npm run build
 npm test
 npm run test:coverage
-node scripts/verify.mjs        # 全命令/全参数离线校验（113 项）
+node scripts/verify.mjs        # 全命令/全参数离线校验（117 项）
 npm pack --dry-run
 ```
 
-`node scripts/verify.mjs` 会启动本地模拟服务，逐项验证全部命令、全部参数、确认流程、凭据优先级与错误映射（113 项）。
+`node scripts/verify.mjs` 会启动本地模拟服务，逐项验证全部命令、全部参数、确认流程、密码读取、凭据优先级与错误映射（117 项），CI 每次提交都会跑。
 
 单元与集成测试使用模拟函数和本地 HTTP 服务，不访问 ld246.com，不需要真实 Token。接口路径测试覆盖文档中的全部操作；构建产物执行公共读取、确认写入和未确认拒绝的端到端测试。
 
@@ -280,7 +280,7 @@ npm pack --dry-run
 
 ## 版本与发布
 
-遵循语义化版本，`vX.Y.Z` tag 推送到 `main` 才会自动发布到 npm 并创建 GitHub Release；其余推送只跑测试。版本号、发布步骤与 npm token 配置见 [docs/publishing.md](docs/publishing.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+遵循语义化版本，`vX.Y.Z` tag 推送到 `main` 会自动发布到 npm 并创建 GitHub Release。手动触发 Release 工作流默认同样发布（只允许从 `main` 或 release tag 触发），需要演练时请显式勾选 `dry_run`。普通分支推送只跑测试。版本号、发布步骤与 npm token 配置见 [docs/publishing.md](docs/publishing.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
 npm run release:patch   # 或 release:minor / release:major

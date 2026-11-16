@@ -1,6 +1,8 @@
 # Publishing
 
-Releases are tag-driven. Pushing a `vMAJOR.MINOR.PATCH` tag that points at a commit on `main` publishes to npm and creates a GitHub release; nothing else publishes.
+Releases are tag-driven. Pushing a `vMAJOR.MINOR.PATCH` tag that points at a commit on `main` publishes to npm and creates a GitHub release. Ordinary branch pushes never publish.
+
+Manually running the Release workflow also publishes, but only from `main` or from a release tag; a dry run has to be requested explicitly with the `dry_run` input.
 
 ## Version policy
 
@@ -33,7 +35,7 @@ The workflow then:
 
 1. Refuses to continue unless the tag commit is an ancestor of `origin/main` (it retries briefly, because GitHub can deliver the tag event before the branch update).
 2. Runs `scripts/check-version.mjs` with the tag name, so a mismatched version fails before anything is built.
-3. Runs typecheck, the test suite, `scripts/verify.mjs` and `scripts/pack-check.mjs`.
+3. Runs typecheck (sources and tests), the test suite, `scripts/verify.mjs` and `scripts/pack-check.mjs`.
 4. Refuses to publish a version that already exists on the registry.
 5. Publishes with `--provenance`, then creates a GitHub release with generated notes.
 
@@ -47,14 +49,16 @@ The workflow then:
 
 | Scenario | Result |
 | --- | --- |
-| Manual run without `publish` | checks pass, `npm pack --dry-run` runs, nothing published |
+| Manual run from `main` without inputs | publishes the current `package.json` version |
+| Manual run with `dry_run` enabled | checks pass, `npm pack --dry-run` runs, nothing published |
+| Manual run from a feature branch without `dry_run` | job fails with `Publishing is only allowed from main or from a release tag.` |
 | Tag on a commit outside `main` | job fails with `Tag commit is not on main. Merge to main before tagging.`; build and publish are skipped |
 | Tag whose version differs from `package.json` | fails with `version check failed: tag vX.Y.Z does not match package version; expected vA.B.C`; publish is skipped |
 | Version already on the registry | publish step stops with `Version … is already published. Bump the version first.` |
 
 ## Dry run
 
-Run the workflow manually (`Actions → Release → Run workflow`) with `publish` left off. It performs every check and runs `npm pack --dry-run` without publishing — useful to validate changes to the pipeline itself.
+Run the workflow manually (`Actions → Release → Run workflow`) with `dry_run` enabled. It performs every check and runs `npm pack --dry-run` without publishing — useful to validate changes to the pipeline itself. Leaving `dry_run` off on a manual run publishes, so only use it from `main`.
 
 ## After publishing
 
@@ -67,7 +71,7 @@ npm view liandi version dist.tarball
 
 - `bin` points at `dist/cli.js`, which starts with `#!/usr/bin/env node`; npm generates the `liandi.cmd` and `liandi.ps1` shims on Windows automatically.
 - CI runs the test suite on ubuntu-latest, macos-latest and windows-latest for Node 20, 22 and 24, so platform regressions surface before a tag is cut.
-- The published package ships only `dist/`, `skills/`, `README.md`, `LICENSE` and `THIRD_PARTY_NOTICES.md`. `scripts/pack-check.mjs` fails if sources or `node_modules` sneak in.
+- The published package ships only `dist/`, `skills/`, `docs/`, `CHANGELOG.md`, `README.md`, `LICENSE` and `THIRD_PARTY_NOTICES.md`. `scripts/pack-check.mjs` fails if sources or `node_modules` sneak in.
 - Global config uses `%APPDATA%` on Windows and `$XDG_CONFIG_HOME` (or `~/.config`) elsewhere.
 
 ## If the name is taken

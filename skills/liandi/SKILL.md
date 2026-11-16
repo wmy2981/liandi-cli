@@ -33,6 +33,8 @@ Use `liandi` for documented ld246.com API operations. If the command is not inst
 - Errors use `{ "ok": false, "status": "error", "error": { "code", "message" } }` and a nonzero exit code.
 - A non-zero upstream `code` is surfaced as an error with code `API_CODE_<n>` and exit 1, so `ok: true` really means the server accepted the operation. Login `code 10` means two-factor is required and returns a `hint`.
 - When stdout is piped, default output is also JSON-formatted; `-j` adds the stable envelope and should be preferred.
+- With `-j`, stdout is always exactly one JSON object: an interactive write preview goes to stderr, and a refused non-interactive write puts the preview in `error.details`.
+- `--password-stdin` reads one line and never echoes it; a closed stdin fails with `INVALID_INPUT` (exit 2) instead of hanging.
 - Page size is fixed by the server at 20. Use `-p`, not a page-size option. Events use `-s 1..64`.
 
 ## Safety boundaries
@@ -54,7 +56,7 @@ Only the documented v2 endpoints exist. These requests cannot be fulfilled, so s
 - Custom page size (fixed at 20) and captcha images (`/captcha/login` returns an image, not JSON).
 - Persisting a login session: only API Tokens are supported.
 
-Writable operations are exactly: `article post`, `article edit` (own), `comment post`, `comment edit` (own), `notice read`, `auth login`, `auth 2fa`, `auth logout`.
+Writable operations are exactly: `article post`, `article edit` (own), `comment post`, `comment edit` (own), `notice read`, `auth login`, `auth 2fa`, `auth logout`, and the local `skill install`.
 
 ## Missing or ambiguous input
 

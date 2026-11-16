@@ -1,7 +1,7 @@
 # Contributing
 
 1. Use Node.js 20 or newer.
-2. Run `npm install`, then `npm run typecheck`, `npm run build`, and `npm test` before submitting changes.
+2. Run `npm install`, then `npm run typecheck` (sources and tests), `npm run build`, `npm test`, and `node scripts/verify.mjs` before submitting changes.
 3. Keep command names and the JSON envelope stable for agents.
 4. All remote state changes and local skill installations must support `--dry-run` and require confirmation unless `--yes` is explicitly supplied.
 5. Never commit `.env`, tokens, passwords, session cookies, or real login responses.
