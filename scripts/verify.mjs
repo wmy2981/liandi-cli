@@ -7,13 +7,18 @@
  */
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLI = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const verbose = process.argv.includes('--verbose');
+
+if (!existsSync(CLI)) {
+  console.error(`missing ${CLI}; run "npm run build" before this script`);
+  process.exit(1);
+}
 
 const requests = [];
 const server = createServer(async (request, response) => {
