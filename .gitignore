@@ -9,3 +9,4 @@ coverage/
 core
 core.*
 liandi-skill-workspace/
+*.tgz

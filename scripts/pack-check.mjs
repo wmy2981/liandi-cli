@@ -7,39 +7,43 @@
  *   node scripts/pack-check.mjs
  */
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, readdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = new URL('..', import.meta.url).pathname;
+const root = fileURLToPath(new URL('..', import.meta.url));
 const work = mkdtempSync(join(tmpdir(), 'liandi-pack-'));
+const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+// Windows exposes npm as a .cmd shim that execFileSync cannot spawn directly.
+const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
 const run = (command, args, options = {}) =>
   execFileSync(command, args, { stdio: 'pipe', encoding: 'utf8', ...options });
 
 console.log('1. building');
-run('npm', ['run', 'build'], { cwd: root });
+run(npm, ['run', 'build'], { cwd: root });
 
 console.log('2. packing');
-const packOutput = run('npm', ['pack', '--pack-destination', work], { cwd: root });
+const packOutput = run(npm, ['pack', '--pack-destination', work], { cwd: root });
 const tarball = join(work, packOutput.trim().split('\n').at(-1));
 if (!existsSync(tarball)) throw new Error(`tarball not created: ${tarball}`);
 
-const listing = run('tar', ['-tzf', tarball]);
+const entries = run('tar', ['-tzf', tarball]).split('\n').map(entry => entry.trim()).filter(Boolean);
 for (const required of ['package/dist/cli.js', 'package/dist/skills/liandi/SKILL.md', 'package/dist/skills/liandi/references/commands.md', 'package/package.json']) {
-  if (!listing.includes(required)) throw new Error(`tarball is missing ${required}`);
+  if (!entries.includes(required)) throw new Error(`tarball is missing ${required}`);
 }
-if (listing.includes('package/src/')) throw new Error('tarball should not ship TypeScript sources');
-if (listing.includes('node_modules')) throw new Error('tarball should not ship node_modules');
+if (entries.some(entry => entry.startsWith('package/src/'))) throw new Error('tarball should not ship TypeScript sources');
+if (entries.some(entry => entry.includes('node_modules'))) throw new Error('tarball should not ship node_modules');
 
 console.log('3. installing into an isolated prefix');
 const prefix = join(work, 'prefix');
-run('npm', ['install', '--prefix', prefix, '--no-audit', '--no-fund', tarball], { cwd: work });
+run(npm, ['install', '--prefix', prefix, '--no-audit', '--no-fund', tarball], { cwd: work });
 const installed = join(prefix, 'node_modules', 'liandi', 'dist', 'cli.js');
 if (!existsSync(installed)) throw new Error('installed CLI is missing');
 
 console.log('4. running the installed CLI');
 const version = run(process.execPath, [installed, '--version'], { cwd: work }).trim();
-if (!/^\d+\.\d+\.\d+/u.test(version)) throw new Error(`bad version output: ${version}`);
+if (version !== pkg.version) throw new Error(`version output ${version} != package.json ${pkg.version}`);
 const help = run(process.execPath, [installed, '--help'], { cwd: work });
 for (const group of ['article', 'comment', 'user', 'notice', 'time']) {
   if (!help.includes(group)) throw new Error(`help is missing ${group}`);

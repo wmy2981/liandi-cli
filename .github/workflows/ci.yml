@@ -35,4 +35,5 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      - run: node scripts/verify.mjs
       - run: node scripts/pack-check.mjs
