@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { boolean, content, contentType, encodeSegment, integer, positiveInteger, size } from '../src/input.js';
-import { formatOutput, redact } from '../src/output.js';
+import { formatOutput, redact, resolveColor } from '../src/output.js';
 
 describe('input', () => {
   it('loads UTF-8 content from a file', async () => {
@@ -47,5 +47,34 @@ describe('output', () => {
     expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, false)).toContain('no request was sent');
     expect(formatOutput({ ok: true, status: 'cancelled' }, false)).toContain('Cancelled');
     expect(formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, false)).toBe('Error [X]: bad');
+  });
+  it('colors status lines and hints but never the data', () => {
+    const error = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, false, true);
+    expect(error).toBe('\u001B[31mError [X]: bad\u001B[39m');
+    const dryRun = formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, false, true);
+    expect(dryRun).toContain('\u001B[33mDry run: no request was sent.\u001B[39m');
+    expect(dryRun.split('\n').slice(1).join('\n')).not.toContain('\u001B');
+    const hinted = formatOutput({ ok: true, status: 'success', data: { code: 0 }, hint: 'run auth 2fa' }, false, true);
+    expect(hinted).toContain('\u001B[36mrun auth 2fa\u001B[39m');
+    expect(hinted.split('\n').slice(0, -1).join('\n')).not.toContain('\u001B');
+  });
+  it('never emits ANSI escapes in JSON mode', () => {
+    const text = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, true, true);
+    expect(text).not.toContain('\u001B');
+    expect(JSON.parse(text).error.code).toBe('X');
+  });
+  it('resolves color from flags, environment and the target stream', () => {
+    expect(resolveColor('always', { isTTY: false }, {})).toBe(true);
+    expect(resolveColor('never', { isTTY: true }, {})).toBe(false);
+    expect(resolveColor(undefined, { isTTY: true }, {})).toBe(true);
+    expect(resolveColor(undefined, { isTTY: false }, {})).toBe(false);
+    expect(resolveColor(undefined, { isTTY: true }, { NO_COLOR: '1' })).toBe(false);
+    expect(resolveColor(undefined, { isTTY: true }, { NO_COLOR: '' })).toBe(true);
+    expect(resolveColor(undefined, { isTTY: false }, { FORCE_COLOR: '1' })).toBe(true);
+    expect(resolveColor(undefined, { isTTY: true }, { FORCE_COLOR: '0' })).toBe(false);
+    expect(resolveColor(undefined, { isTTY: true }, { FORCE_COLOR: 'false' })).toBe(false);
+    expect(resolveColor(undefined, { isTTY: true }, { TERM: 'dumb' })).toBe(false);
+    expect(resolveColor(undefined, { isTTY: false }, { NO_COLOR: '1', FORCE_COLOR: '1' })).toBe(true);
+    expect(resolveColor('always', { isTTY: false }, { NO_COLOR: '1' })).toBe(true);
   });
 });

@@ -1,6 +1,6 @@
 # Command reference
 
-Global flags may appear anywhere: `-j, --json`, `-t, --token`, `-b, --base-url`, `-d, --dry-run`, `-y, --yes`, `-v, --version`, `-h, --help`.
+Global flags may appear anywhere: `-j, --json`, `-t, --token`, `-b, --base-url`, `-d, --dry-run`, `-y, --yes`, `--color auto|always|never`, `--no-color`, `-v, --version`, `-h, --help`. Colors only decorate status lines and hints, and never appear in `-j` output.
 
 Aliases: `article|a`, `comment|c`, `user|u`, `notice|n`, `domain|dom`, `tag|tags`, `top|tops`.
 

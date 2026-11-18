@@ -155,7 +155,24 @@ await check('read: human output is formatted JSON without envelope', async () =>
   const result = await start(['time']);
   assert(result.code === 0, 'nonzero exit');
   assert(!result.stdout.includes('"ok"'), 'unexpected envelope in human mode');
+  assert(!result.stdout.includes('\u001B'), 'unexpected ANSI escapes on a pipe');
   assert(json(result.stdout).code === 0, 'missing upstream code');
+});
+
+await check('output: color follows flags, environment and TTY', async () => {
+  const forced = await start(['bogus', '--color', 'always']);
+  assert(forced.code === 2, `exit ${forced.code}`);
+  assert(forced.stderr.includes('\u001B[31m'), 'missing red status line');
+  const piped = await start(['bogus']);
+  assert(!piped.stderr.includes('\u001B'), 'unexpected ANSI on a pipe');
+  const disabled = await start(['bogus', '--color', 'always', '--no-color']);
+  assert(!disabled.stderr.includes('\u001B'), '--no-color ignored');
+  const noColor = await start(['bogus'], { env: { NO_COLOR: '1' } });
+  assert(!noColor.stderr.includes('\u001B'), 'NO_COLOR ignored');
+  const forcedEnv = await start(['bogus'], { env: { NO_COLOR: '1', FORCE_COLOR: '1' } });
+  assert(forcedEnv.stderr.includes('\u001B'), 'FORCE_COLOR ignored');
+  const tty = await start(['bogus'], { pty: true });
+  assert(tty.stdout.includes('\u001B[31m'), 'missing color in a TTY');
 });
 
 // ---------------------------------------------------------------- writes
@@ -423,7 +440,7 @@ await check('meta: --help lists every group and global flags', async () => {
   for (const group of ['article', 'comment', 'domain', 'tag', 'user', 'notice', 'top', 'auth', 'time', 'skill']) {
     assert(result.stdout.includes(group), `missing group ${group}`);
   }
-  for (const flag of ['--json', '--dry-run', '--yes', '--token', '--base-url']) {
+  for (const flag of ['--json', '--dry-run', '--yes', '--token', '--base-url', '--color', '--no-color']) {
     assert(result.stdout.includes(flag), `missing flag ${flag}`);
   }
 });

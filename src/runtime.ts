@@ -3,12 +3,13 @@ import { stdin, stdout, stderr } from 'node:process';
 import { LiandiClient, type ApiRequest } from './client.js';
 import { baseUrl } from './config.js';
 import { LiandiError } from './errors.js';
-import { formatOutput, redact, type OutputEnvelope } from './output.js';
+import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope } from './output.js';
 
 export interface GlobalOptions {
   token?: string;
   baseUrl?: string;
   json?: boolean;
+  color?: ColorMode;
   dryRun?: boolean;
   yes?: boolean;
 }
@@ -61,7 +62,7 @@ export async function execute(
       const running: OutputEnvelope = { ok: true, status: 'dry-run', command, data: preview() };
       // stdout stays a single envelope in JSON mode; the preview is for the human
       // that has to confirm, and the error below carries it for everyone else.
-      if (!globals.json) io.stdout.write(formatOutput(running, false) + '\n');
+      if (!globals.json) io.stdout.write(formatOutput(running, false, resolveColor(globals.color, io.stdout, env)) + '\n');
       else if (interactive) io.stderr.write(formatOutput(running, true) + '\n');
       if (!interactive) {
         throw new LiandiError('Confirmation required in a non-interactive terminal. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2, preview());

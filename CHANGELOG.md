@@ -15,3 +15,4 @@ Initial release.
 - Unexpected internal failures exit `1` instead of `0`, and `--password-stdin` reads one masked line, failing with `INVALID_INPUT` (exit 2) when stdin is closed.
 - `-j` always writes exactly one JSON object to stdout: an interactive write preview goes to stderr, and a refused non-interactive write carries the preview in `error.details`.
 - Closing the pipe early (`liandi … | head`) ends the process without an EPIPE stack trace.
+- Human-readable output colors status lines and hints in a TTY; `--color auto|always|never` and `--no-color` control it, `NO_COLOR`/`FORCE_COLOR` are honored, and `-j` stays free of ANSI escapes.

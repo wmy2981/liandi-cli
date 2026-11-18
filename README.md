@@ -6,6 +6,7 @@
 
 - 完整支持帖子、回帖、领域、标签、用户、通知、榜单、登录和系统时间接口。
 - 默认格式化 JSON 数据；`-j, --json` 提供统一、稳定的机器可读信封。
+- 人类可读输出在 TTY 中给状态行和提示上色，管道与 `-j` 输出保持纯文本。
 - 写操作默认先展示请求预览，再交互确认；`-d, --dry-run` 仅预览，`-y, --yes` 确认执行。
 - `--content` 内联正文或 `--content-file` 读取 UTF-8 Markdown/HTML 文件。
 - 每级配置独立管理 API Token，日志和预览不输出凭据。
@@ -92,6 +93,12 @@ chmod 600 .env
 ```text
 Error [AUTH_REQUIRED]: API token required. ...
 ```
+
+### 彩色终端
+
+交互式终端里只给状态行和提示上色：错误为红色，预览/取消为黄色，附加提示为青色；响应数据保持纯文本，`-j` 输出永远不含 ANSI 转义。
+
+颜色按 stdout、stderr 分别检测 TTY 自动开启，也可用 `--color auto|always|never` 或 `--no-color` 控制。优先级：命令行参数 > `FORCE_COLOR`（`0`/`false` 禁用，其余启用）> `NO_COLOR`（非空即禁用）> TTY 检测。
 
 ### Agent / 自动化
 

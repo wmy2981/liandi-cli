@@ -68,7 +68,31 @@ describe('CLI integration', () => {
   it('documents the global flags in subcommand help', async () => {
     const { io, env } = harness();
     expect(await run(['article', 'post', '--help'], { io, env })).toBe(0);
-    for (const flag of ['--token', '--base-url', '--json', '--dry-run', '--yes']) expect(io.out).toContain(flag);
+    for (const flag of ['--token', '--base-url', '--json', '--dry-run', '--yes', '--color', '--no-color']) expect(io.out).toContain(flag);
+  });
+  it('colors status lines only when the flag or the terminal asks for it', async () => {
+    const { io, env } = harness();
+    expect(await run(['bogus', '--color', 'always'], { io, env })).toBe(2);
+    expect(io.err).toBe('\u001B[31mError [INVALID_INPUT]: unknown command \'bogus\'\u001B[39m\n');
+    io.err = '';
+    expect(await run(['bogus', '--no-color'], { io, env })).toBe(2);
+    expect(io.err).not.toContain('\u001B');
+    io.err = '';
+    const piped: IO = { ...io, stderr: { ...io.stderr, isTTY: false } };
+    expect(await run(['bogus'], { io: piped, env })).toBe(2);
+    expect(io.err).not.toContain('\u001B');
+  });
+  it('colors a dry-run status line but leaves the preview plain', async () => {
+    const { io, env } = harness();
+    const piped: IO = { ...io, stdout: { ...io.stdout, isTTY: false } };
+    expect(await run(['article', 'post', '--title', 't', '--tags', 'a', '-c', 'x', '-d', '--color', 'always'], { io: piped, env })).toBe(0);
+    expect(io.out).toContain('\u001B[33mDry run: no request was sent.\u001B[39m');
+    expect(io.out.split('\n').slice(1).join('\n')).not.toContain('\u001B');
+  });
+  it('rejects an invalid --color value', async () => {
+    const { io, env } = harness();
+    expect(await run(['time', '--color', 'sometimes'], { io, env })).toBe(2);
+    expect(io.err).toContain('--color must be auto, always or never');
   });
   it('supports short global and help flags', async () => {
     const { io, env } = harness();

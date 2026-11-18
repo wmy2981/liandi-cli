@@ -7,7 +7,7 @@ import { baseUrl, resolveToken } from './config.js';
 import { definitions, readableNoticeType } from './catalog.js';
 import { LiandiError } from './errors.js';
 import { defaultIO, errorEnvelope, execute, type GlobalOptions, type IO } from './runtime.js';
-import { formatOutput, redact, type OutputEnvelope } from './output.js';
+import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope } from './output.js';
 import { installSkill, skillPaths } from './skill.js';
 
 interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string }
@@ -23,14 +23,22 @@ function packageVersion(): string {
 function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } {
   const globals: GlobalOptions = {};
   const rest: string[] = [];
-  const names: Record<string, keyof GlobalOptions> = { '--token': 'token', '-t': 'token', '--base-url': 'baseUrl', '-b': 'baseUrl' };
+  const names: Record<string, keyof GlobalOptions> = {
+    '--token': 'token', '-t': 'token', '--base-url': 'baseUrl', '-b': 'baseUrl', '--color': 'color',
+  };
   const booleans: Record<string, keyof GlobalOptions> = { '--json': 'json', '-j': 'json', '--dry-run': 'dryRun', '-d': 'dryRun', '--yes': 'yes', '-y': 'yes' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     const name = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg;
-    if (name in names) {
+    if (name === '--no-color') {
+      if (arg.includes('=')) throw new LiandiError('--no-color does not take a value', 'INVALID_INPUT', 2);
+      globals.color = 'never';
+    } else if (name in names) {
       const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : argv[++index];
       if (!value) throw new LiandiError(`${name} requires a value`, 'INVALID_INPUT', 2);
+      if (names[name] === 'color' && !isColorMode(value)) {
+        throw new LiandiError('--color must be auto, always or never', 'INVALID_INPUT', 2);
+      }
       (globals as Record<string, string | boolean | undefined>)[names[name]!] = value;
     } else if (name in booleans) {
       if (arg.includes('=')) throw new LiandiError(`${name} does not take a value`, 'INVALID_INPUT', 2);
@@ -43,6 +51,12 @@ function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } 
     throw new LiandiError('--yes only applies to write operations; omit it for reads', 'INVALID_INPUT', 2);
   }
   return { globals, rest };
+}
+
+const COLOR_MODES: readonly ColorMode[] = ['auto', 'always', 'never'];
+
+function isColorMode(value: string): value is ColorMode {
+  return (COLOR_MODES as readonly string[]).includes(value);
 }
 
 const WRITE = new Set(['post', 'edit', 'read', 'login', '2fa', 'logout', 'install']);
@@ -101,6 +115,8 @@ Global options (can appear before or after commands):
   -j, --json                Uniform JSON output for agents
   -d, --dry-run             Preview a write; never send it
   -y, --yes                 Execute a write without interactive confirmation
+  --color <when>            Colorize status lines and hints: auto, always, never
+  --no-color                Never colorize (same as --color never)
   -v, --version             Show version
   -h, --help                Show help
 
@@ -135,7 +151,7 @@ export function createProgram(options: ProgramOptions = {}): Command {
       ...globals, baseUrl: baseUrl(env, globals.baseUrl), token: resolved.token,
     }, io, version, env, definition);
     if (name.startsWith('auth.') && result.status === 'success') result.data = redact(result.data);
-    io.stdout.write(formatOutput(result, globals.json ?? false) + '\n');
+    io.stdout.write(formatOutput(result, globals.json ?? false, resolveColor(globals.color, io.stdout, env)) + '\n');
   };
 
   const group = (name: string, description: string, ...aliases: string[]) => {
@@ -240,9 +256,10 @@ export function createProgram(options: ProgramOptions = {}): Command {
     async () => {
       lastCommand = 'skill.install';
       const globals = invocationGlobals;
+      const color = resolveColor(globals.color, io.stdout, env);
       const preview = { action: 'install or update', destination: skillPaths().destination };
       if (globals.dryRun) {
-        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false) + '\n');
+        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false, color) + '\n');
         return;
       }
       if (!globals.yes) {
@@ -257,11 +274,11 @@ export function createProgram(options: ProgramOptions = {}): Command {
           try { return await rl.question(prompt); } finally { rl.close(); }
         });
         if (!/^y(?:es)?$/iu.test((await confirm('Install this skill? [y/N] ')).trim())) {
-          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, globals.json ?? false) + '\n');
+          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, globals.json ?? false, color) + '\n');
           return;
         }
       }
-      io.stdout.write(formatOutput({ ok: true, status: 'success', command: lastCommand, data: await installSkill() }, globals.json ?? false) + '\n');
+      io.stdout.write(formatOutput({ ok: true, status: 'success', command: lastCommand, data: await installSkill() }, globals.json ?? false, color) + '\n');
     });
 
   // Global flags are parsed separately so they work at any position, as agents commonly append -j.
@@ -292,16 +309,21 @@ function normalizeError(error: unknown): unknown {
 
 export async function run(argv: string[], options: ProgramOptions = {}): Promise<number> {
   const io = options.io ?? defaultIO;
+  const env = options.env ?? process.env;
   // Reset first: global-flag errors are thrown before the command is resolved.
   lastCommand = typedCommand(argv);
-  const json = (() => { try { return parseFlags(argv).globals.json ?? false; } catch { return argv.includes('--json') || argv.includes('-j'); } })();
+  const pending = (() => {
+    try { return parseFlags(argv).globals; } catch { return undefined; }
+  })();
+  const json = pending?.json ?? (argv.includes('--json') || argv.includes('-j'));
+  const color = resolveColor(pending?.color, io.stderr, env);
   try {
     await createProgram(options).parseAsync(argv, { from: 'user' });
     return 0;
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.version'].includes(error.code)) return 0;
     const known = normalizeError(error);
-    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), json) + '\n');
+    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), json, json ? false : color) + '\n');
     // Unexpected exceptions are runtime failures: never report them as success.
     return known instanceof LiandiError ? known.exitCode : 1;
   }
