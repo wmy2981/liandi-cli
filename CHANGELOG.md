@@ -2,7 +2,7 @@
 
 Notable, user-visible changes. The CLI surface (commands, flags, exit codes) and the JSON output envelope are the versioned contract; see [docs/publishing.md](docs/publishing.md) for the bump rules.
 
-## v0.1.0 — unreleased
+## v0.1.0 — 2026-11-22
 
 Initial release.
 

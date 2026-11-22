@@ -41,9 +41,10 @@ The workflow then:
 
 ## Required setup (once)
 
-- Repository secret `NPM_TOKEN`: an npm automation/granular token with publish rights for the `liandi` package. Without it the publish step fails; everything before it still runs.
+- Repository secret `NPM_TOKEN`: a **granular access token** with Read and write permission for `All packages`, created on npmjs.com → Access Tokens. Without it the publish step fails; everything before it still runs.
 - Environment `npm` is referenced by the publish job. Add required reviewers there if you want a manual gate before publishing.
-- npm 2FA: use an automation token (or a granular token that bypasses 2FA), because a workflow cannot answer an OTP prompt.
+- The token must have **Bypass two-factor authentication** checked, because a workflow cannot answer an OTP prompt. Classic automation tokens no longer exist (creation was disabled in November 2025 and every remaining token was revoked in December 2025), so a granular token is the only option.
+- Write tokens are capped at a 90-day lifetime, so the secret has to be rotated. npm plans to remove direct publishing with bypass-2FA tokens in January 2027; after the package exists, move to [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) instead, which needs no secret at all.
 
 ## Guard behaviour (verified)
 
