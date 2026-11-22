@@ -41,10 +41,12 @@ The workflow then:
 
 ## Required setup (once)
 
-- Repository secret `NPM_TOKEN`: a **granular access token** with Read and write permission for `All packages`, created on npmjs.com → Access Tokens. Without it the publish step fails; everything before it still runs.
+- **Trusted publisher** for the package on npmjs.com → package Settings → Trusted Publisher: organization/user `wmy2981`, repository `liandi-cli`, workflow filename `release.yml`, environment `npm`, with `npm publish` allowed. No token is stored in GitHub at all.
 - Environment `npm` is referenced by the publish job. Add required reviewers there if you want a manual gate before publishing.
-- The token must have **Bypass two-factor authentication** checked, because a workflow cannot answer an OTP prompt. Classic automation tokens no longer exist (creation was disabled in November 2025 and every remaining token was revoked in December 2025), so a granular token is the only option.
-- Write tokens are capped at a 90-day lifetime, so the secret has to be rotated. npm plans to remove direct publishing with bypass-2FA tokens in January 2027; after the package exists, move to [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC) instead, which needs no secret at all.
+- The publish job installs the latest npm first, because trusted publishing requires npm 11.5.1+ and the Node 22 image ships npm 10.
+- The first version has to be published from a workstation: `npm login --registry https://registry.npmjs.org`, then `npm publish --registry https://registry.npmjs.org --access public`. A trusted publisher can only be configured for a package that already exists, so the bootstrap cannot go through CI.
+- Once the trusted publisher works, set Settings → Publishing access → **Require two-factor authentication and disallow tokens**, so no granular token can publish the package.
+- A granular access token (Read and write, **Bypass 2FA** checked) is only a temporary fallback: write tokens expire after 90 days, and npm plans to remove direct publishing with bypass-2FA tokens in January 2027. Classic automation tokens no longer exist — creation was disabled in November 2025 and every remaining token was revoked in December 2025.
 
 ## Guard behaviour (verified)
 

@@ -2,6 +2,13 @@
 
 Notable, user-visible changes. The CLI surface (commands, flags, exit codes) and the JSON output envelope are the versioned contract; see [docs/publishing.md](docs/publishing.md) for the bump rules.
 
+## v0.1.1 — 2026-11-22
+
+- Releases are published by CI through npm trusted publishing (OIDC); no long-lived npm token is stored in the repository.
+- `0.1.0` was published from a workstation to bootstrap the package name, so it carries no provenance; releases from `0.1.1` are built and published by CI with a provenance statement and a GitHub release.
+- `scripts/pack-check.mjs` runs on Windows again; Node refuses to spawn the `npm.cmd` shim without a shell.
+- Corrected the npm credential instructions in [docs/publishing.md](docs/publishing.md): classic automation tokens no longer exist.
+
 ## v0.1.0 — 2026-11-22
 
 Initial release.
