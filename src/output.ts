@@ -1,3 +1,4 @@
+import { DEFAULT_LOCALE, localizeErrorMessage, messages, type Locale } from './i18n.js';
 import { render } from './render.js';
 
 export type OutputKind = 'success' | 'dry-run' | 'cancelled' | 'error';
@@ -25,6 +26,8 @@ export interface FormatOptions {
   width?: number;
   /** Server the request went to, so rendered links can be absolute. */
   baseUrl?: string;
+  /** Display language for human-readable output; ignored in JSON mode. */
+  locale?: Locale;
 }
 
 const ANSI = { red: '\u001B[31m', yellow: '\u001B[33m', cyan: '\u001B[36m', reset: '\u001B[39m' } as const;
@@ -52,17 +55,19 @@ export function resolveColor(
 }
 
 export function formatOutput(envelope: OutputEnvelope, options: FormatOptions = {}): string {
-  const { format = 'human', color = false, width, baseUrl } = options;
+  const { format = 'human', color = false, width, baseUrl, locale = DEFAULT_LOCALE } = options;
   if (format === 'json') return JSON.stringify(envelope, null, 2);
+  const t = messages(locale).output;
   const paint = (code: string) => (text: string) => color ? `${code}${text}${ANSI.reset}` : text;
   if (envelope.status === 'error') {
-    return paint(ANSI.red)(`Error [${envelope.error?.code}]: ${envelope.error?.message}`);
+    const detail = localizeErrorMessage(envelope.error?.message ?? 'Unknown error', locale);
+    return paint(ANSI.red)(t.error(envelope.error?.code ?? 'INTERNAL_ERROR', detail));
   }
   if (envelope.status === 'dry-run') {
-    return `${paint(ANSI.yellow)('Dry run: no request was sent.')}\n${formatDryRun(envelope.data)}`;
+    return `${paint(ANSI.yellow)(t.dryRun)}\n${formatDryRun(envelope.data)}`;
   }
-  if (envelope.status === 'cancelled') return paint(ANSI.yellow)('Cancelled: no request was sent.');
-  const body = render(envelope.command, envelope.data, { width, baseUrl });
+  if (envelope.status === 'cancelled') return paint(ANSI.yellow)(t.cancelled);
+  const body = render(envelope.command, envelope.data, { width, baseUrl, locale });
   return envelope.hint ? `${body}\n\n${paint(ANSI.cyan)(envelope.hint)}` : body;
 }
 

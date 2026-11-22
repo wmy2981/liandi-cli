@@ -67,7 +67,7 @@ await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const base = `http://127.0.0.1:${server.address().port}`;
 
 function start(args, { env = {}, cwd, pty = false, input } = {}) {
-  const fullEnv = { PATH: process.env.PATH, LIANDI_TOKEN: 'mock-token', LIANDI_BASE_URL: base, ...env };
+  const fullEnv = { PATH: process.env.PATH, LIANDI_TOKEN: 'mock-token', LIANDI_BASE_URL: base, LIANDI_LANG: 'en', ...env };
   for (const [key, value] of Object.entries(fullEnv)) if (value === undefined) delete fullEnv[key];
   const command = pty ? 'script' : process.execPath;
   const commandArgs = pty ? ['-qefc', `${process.execPath} ${CLI} ${args.join(' ')}`, '/dev/null'] : [CLI, ...args];
@@ -283,9 +283,30 @@ await check('format: human output is the default for a read', async () => {
   const result = await start(['article', 'list'], { env: { LIANDI_TOKEN: 'mock-shape' } });
   assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
   assert(!result.stdout.trim().startsWith('{'), 'human output is JSON');
-  for (const expected of ['标题一', 'alice', '2026-11-22 10:00:00', 'https://ld246.com/article/1', '本页 1 条 · 共 2991 页']) {
+  for (const expected of ['标题一', 'alice', '2026-11-22 10:00:00', 'https://ld246.com/article/1', 'Showing 1 · 2991 pages']) {
     assert(result.stdout.includes(expected), `missing ${expected}`);
   }
+});
+
+await check('i18n: --lang and env switch terminal output for en, zh-CN and zh-TW', async () => {
+  const cn = await start(['article', 'list', '--lang', 'zh-CN'], { env: { LIANDI_TOKEN: 'mock-shape' } });
+  assert(cn.code === 0 && cn.stdout.includes('本页 1 条 · 共 2991 页'), `bad zh-CN: ${cn.stdout.slice(0, 120)}`);
+  const tw = await start(['article', 'list'], { env: { LIANDI_TOKEN: 'mock-shape', LIANDI_LANG: undefined, LANG: 'zh_TW.UTF-8' } });
+  assert(tw.code === 0 && tw.stdout.includes('本頁 1 則 · 共 2991 頁'), `bad zh-TW: ${tw.stdout.slice(0, 120)}`);
+  const cnHelp = await start(['--help', '--lang', 'zh-CN']);
+  assert(cnHelp.code === 0 && cnHelp.stdout.includes('用法：') && cnHelp.stdout.includes('--lang <locale>'), 'bad zh-CN help');
+  const twHelp = await start(['--help', '--lang', 'zh-TW']);
+  assert(twHelp.code === 0 && twHelp.stdout.includes('用法：') && twHelp.stdout.includes('全域選項'), 'bad zh-TW help');
+  const cnErr = await start(['bogus', '--lang', 'zh-CN']);
+  assert(cnErr.code === 2 && cnErr.stderr.includes('错误 [INVALID_INPUT]：未知命令'), `bad zh-CN error: ${cnErr.stderr}`);
+  const twErr = await start(['bogus', '--lang', 'zh-TW']);
+  assert(twErr.code === 2 && twErr.stderr.includes('錯誤 [INVALID_INPUT]：未知命令'), `bad zh-TW error: ${twErr.stderr}`);
+  const badLang = await start(['time', '--lang', 'fr', '-j']);
+  assert(badLang.code === 2 && json(badLang.stderr).error.code === 'INVALID_INPUT', 'invalid --lang not rejected');
+  // JSON output stays identical across locales.
+  const jsonEn = await start(['bogus', '--lang', 'en', '-j']);
+  const jsonTw = await start(['bogus', '--lang', 'zh-TW', '-j']);
+  assert(jsonEn.stderr === jsonTw.stderr, 'JSON output changed across locales');
 });
 
 await check('format: --format json and -j agree', async () => {
@@ -445,7 +466,7 @@ await check('meta: --help lists every group and global flags', async () => {
     assert(result.stdout.includes(group), `missing group ${group}`);
   }
   assert(!result.stdout.includes('auth'), 'the auth group should be gone');
-  for (const flag of ['--format', '--json', '--dry-run', '--yes', '--token', '--base-url', '--color', '--no-color']) {
+  for (const flag of ['--format', '--json', '--lang', '--dry-run', '--yes', '--token', '--base-url', '--color', '--no-color']) {
     assert(result.stdout.includes(flag), `missing flag ${flag}`);
   }
 });

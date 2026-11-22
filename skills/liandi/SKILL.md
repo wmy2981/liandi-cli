@@ -33,6 +33,7 @@ Use `liandi` for documented ld246.com API operations. If the command is not inst
 - Errors use `{ "ok": false, "status": "error", "error": { "code", "message" } }` and a nonzero exit code.
 - A non-zero upstream `code` is surfaced as an error with code `API_CODE_<n>` and exit 1, so `ok: true` really means the server accepted the operation.
 - Human output is the default even in a pipe, so always pass `--format json` (or `-j`) before parsing stdout.
+- Terminal output (help, human renderers, status lines, prompts, human errors) supports `en`, `zh-CN`, and `zh-TW` via `--lang <locale>` or `LIANDI_LANG` (falling back to `LC_ALL`/`LC_MESSAGES`/`LANG` and system locale). JSON output (`--format json` / `-j`) is always locale-independent.
 - With JSON output, stdout is always exactly one JSON object: an interactive write preview goes to stderr, and a refused non-interactive write puts the preview in `error.details`.
 - Page size is fixed by the server at 20. Use `-p`, not a page-size option. Events use `-s 1..64`.
 

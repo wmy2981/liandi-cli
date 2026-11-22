@@ -1,6 +1,6 @@
 # Command reference
 
-Global flags may appear anywhere: `--format human|json`, `-j, --json` (shorthand for `--format json`), `-t, --token`, `-b, --base-url`, `-d, --dry-run`, `-y, --yes`, `--color auto|always|never`, `--no-color`, `-v, --version`, `-h, --help`. The default is human output (tables, blocks, field summaries); pass `--format json` when parsing. Colors only decorate status lines and hints, and never appear in JSON output.
+Global flags may appear anywhere: `--format human|json`, `-j, --json` (shorthand for `--format json`), `--lang en|zh-CN|zh-TW`, `-t, --token`, `-b, --base-url`, `-d, --dry-run`, `-y, --yes`, `--color auto|always|never`, `--no-color`, `-v, --version`, `-h, --help`. The default is human output (tables, blocks, field summaries); pass `--format json` when parsing. Terminal output supports English, Simplified Chinese, and Traditional Chinese (`--lang` > `LIANDI_LANG` > `LC_ALL`/`LC_MESSAGES`/`LANG` > system locale), while JSON output stays locale-independent. Colors only decorate status lines and hints, and never appear in JSON output.
 
 Aliases: `article|a`, `comment|c`, `user|u`, `notice|n`, `domain|dom`, `tag|tags`, `top|tops`.
 

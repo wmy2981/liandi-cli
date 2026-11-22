@@ -1,5 +1,7 @@
 # Authentication notes
 
+[简体中文](zh-CN/authentication.md) | [繁體中文](zh-TW/authentication.md) | English
+
 Verified against the [official v2 API documentation](https://ld246.com/article/1488603534762) and public upstream sources on 2026-11-15.
 
 - Normal v2 API authentication is `Authorization: token <API Token>`, using the API Token in the [account settings page](https://ld246.com/settings/account). It is not a Bearer scheme.

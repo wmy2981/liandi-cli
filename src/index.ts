@@ -2,6 +2,8 @@ export { LiandiClient } from './client.js';
 export type { ApiRequest, ClientOptions, HttpMethod } from './client.js';
 export { resolveToken, parseEnv, baseUrl } from './config.js';
 export type { TokenResolution, TokenSource } from './config.js';
+export { DEFAULT_LOCALE, SUPPORTED_LOCALES, resolveLocale } from './i18n.js';
+export type { Locale } from './i18n.js';
 export { content } from './input.js';
 export { render } from './render.js';
 export type { RenderContext } from './render.js';

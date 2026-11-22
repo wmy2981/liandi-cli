@@ -3,12 +3,14 @@ import { stdin, stdout, stderr } from 'node:process';
 import { LiandiClient, type ApiRequest } from './client.js';
 import { baseUrl } from './config.js';
 import { LiandiError } from './errors.js';
+import { messages, resolveLocale, type Locale } from './i18n.js';
 import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope, type OutputFormat } from './output.js';
 
 export interface GlobalOptions {
   token?: string;
   baseUrl?: string;
   format?: OutputFormat;
+  lang?: Locale;
   color?: ColorMode;
   dryRun?: boolean;
   yes?: boolean;
@@ -54,11 +56,13 @@ export async function execute(
     url: client.url(request),
     ...(request.body === undefined ? {} : { body: request.body }),
   });
+  const locale = resolveLocale(globals.lang, env);
   const rendering = {
     format: globals.format ?? 'human' as const,
     color: resolveColor(globals.color, io.stdout, env),
     width: io.stdout.columns,
     baseUrl: server,
+    locale,
   };
   if (options.write) {
     if (globals.dryRun) return { ok: true, status: 'dry-run', command, data: preview() };
@@ -76,7 +80,7 @@ export async function execute(
         const rl = createInterface({ input: process.stdin, output: process.stdout });
         try { return await rl.question(prompt); } finally { rl.close(); }
       });
-      const answer = await confirm('Execute this operation? [y/N] ');
+      const answer = await confirm(messages(locale).output.confirmOperation);
       if (!/^y(?:es)?$/iu.test(answer.trim())) return { ok: true, status: 'cancelled', command };
     }
     const data = await client.call(request, { auth: options.auth });

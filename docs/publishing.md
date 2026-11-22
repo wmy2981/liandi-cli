@@ -1,5 +1,7 @@
 # Publishing
 
+[简体中文](zh-CN/publishing.md) | [繁體中文](zh-TW/publishing.md) | English
+
 Releases are tag-driven. Pushing a `vMAJOR.MINOR.PATCH` tag that points at a commit on `main` publishes to npm and creates a GitHub release. Ordinary branch pushes never publish.
 
 Manually running the Release workflow also publishes, but only from `main` or from a release tag; a dry run has to be requested explicitly with the `dry_run` input.
@@ -75,7 +77,7 @@ npm view liandi version dist.tarball
 
 - `bin` points at `dist/cli.js`, which starts with `#!/usr/bin/env node`; npm generates the `liandi.cmd` and `liandi.ps1` shims on Windows automatically.
 - CI runs the test suite on ubuntu-latest, macos-latest and windows-latest for Node 20, 22 and 24, so platform regressions surface before a tag is cut.
-- The published package ships only `dist/`, `skills/`, `docs/`, `CHANGELOG.md`, `README.md`, `LICENSE` and `THIRD_PARTY_NOTICES.md`. `scripts/pack-check.mjs` fails if sources or `node_modules` sneak in.
+- The published package ships only `dist/`, `skills/`, `docs/`, `CHANGELOG.md`, `README.md`, `README.zh-TW.md`, `README.en.md`, `LICENSE` and `THIRD_PARTY_NOTICES.md`. `scripts/pack-check.mjs` fails if sources or `node_modules` sneak in.
 - Global config uses `%APPDATA%` on Windows and `$XDG_CONFIG_HOME` (or `~/.config`) elsewhere.
 
 ## If the name is taken

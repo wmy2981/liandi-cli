@@ -9,7 +9,7 @@ function harness() {
     stderr: { isTTY: true, write(text: string) { io.err += text; return true; } },
     stdin: { isTTY: true }, confirm: vi.fn(async () => 'n'),
   } satisfies IO & { out: string; err: string };
-  return { io, env: { LIANDI_TOKEN: 'fake-token' } };
+  return { io, env: { LIANDI_TOKEN: 'fake-token', LIANDI_LANG: 'en' } };
 }
 
 describe('CLI integration', () => {
@@ -54,8 +54,14 @@ describe('CLI integration', () => {
     try {
       const { io, env } = harness();
       expect(await run(['user', 'me'], { io, env })).toBe(0);
-      expect(io.out).toContain('用户名');
+      expect(io.out).toContain('Username');
       expect(io.out).toContain('wmy2981');
+      io.out = '';
+      expect(await run(['user', 'me', '--lang', 'zh-CN'], { io, env })).toBe(0);
+      expect(io.out).toContain('用户名');
+      io.out = '';
+      expect(await run(['user', 'me', '--lang', 'zh-TW'], { io, env })).toBe(0);
+      expect(io.out).toContain('使用者名稱');
       io.out = '';
       expect(await run(['user', 'me', '--format', 'json'], { io, env })).toBe(0);
       expect(JSON.parse(io.out)).toMatchObject({ ok: true, status: 'success', command: 'users.me' });
@@ -121,5 +127,43 @@ describe('CLI integration', () => {
     const { io, env } = harness();
     expect(await run(['user', 'me', '-h'], { io, env })).toBe(0);
     expect(io.out).toContain('Usage:');
+  });
+  it('localizes help, dry-run and human errors for zh-CN and zh-TW, while keeping JSON unchanged', async () => {
+    const { io, env } = harness();
+    expect(await run(['--help', '--lang', 'zh-CN'], { io, env })).toBe(0);
+    expect(io.out).toContain('用法：');
+    expect(io.out).toContain('全局选项');
+    expect(io.out).toContain('--lang <locale>');
+    io.out = '';
+
+    expect(await run(['article', 'list', '--help', '--lang', 'zh-TW'], { io, env })).toBe(0);
+    expect(io.out).toContain('用法：');
+    expect(io.out).toContain('選項：');
+    expect(io.out).toContain('全域選項');
+    io.out = '';
+
+    expect(await run(['article', 'post', '--title', 't', '--tags', 'a', '-c', 'x', '-d', '--lang', 'zh-TW', '--no-color'], { io, env })).toBe(0);
+    expect(io.out).toContain('預覽模式：未傳送請求。');
+    io.out = '';
+
+    expect(await run(['bogus', '--lang', 'zh-CN', '--no-color'], { io, env })).toBe(2);
+    expect(io.err).toBe("错误 [INVALID_INPUT]：未知命令 'bogus'\n");
+    io.err = '';
+
+    expect(await run(['bogus', '--lang', 'zh-TW', '--no-color'], { io, env })).toBe(2);
+    expect(io.err).toBe("錯誤 [INVALID_INPUT]：未知命令 'bogus'\n");
+    io.err = '';
+
+    // JSON output must remain completely unaffected by --lang.
+    expect(await run(['bogus', '--lang', 'zh-TW', '-j'], { io, env })).toBe(2);
+    expect(JSON.parse(io.err)).toMatchObject({ ok: false, status: 'error', error: { code: 'INVALID_INPUT', message: "unknown command 'bogus'" } });
+  });
+  it('rejects unsupported --lang values', async () => {
+    const { io, env } = harness();
+    expect(await run(['time', '--lang', 'fr', '--no-color'], { io, env })).toBe(2);
+    expect(io.err).toContain('--lang must be en, zh-CN or zh-TW');
+    io.err = '';
+    expect(await run(['time', '--lang', 'fr', '-j'], { io, env })).toBe(2);
+    expect(JSON.parse(io.err).error).toMatchObject({ code: 'INVALID_INPUT', message: '--lang must be en, zh-CN or zh-TW' });
   });
 });

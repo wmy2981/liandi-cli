@@ -21,6 +21,8 @@
     "docs",
     "CHANGELOG.md",
     "README.md",
+    "README.zh-TW.md",
+    "README.en.md",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
   ],

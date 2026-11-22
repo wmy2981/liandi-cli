@@ -2,6 +2,18 @@
 
 Notable, user-visible changes. The CLI surface (commands, flags, exit codes) and the JSON output envelope are the versioned contract; see [docs/publishing.md](docs/publishing.md) for the bump rules.
 
+## v0.3.0 — 2026-11-22
+
+Internationalization (i18n) for terminal output and documentation in English (`en`), Simplified Chinese (`zh-CN`), and Traditional Chinese (`zh-TW`), while keeping JSON output strictly locale-independent.
+
+- Added `--lang <locale>` global flag and `LIANDI_LANG` environment variable, supporting `en`, `zh-CN`, and `zh-TW` (plus standard BCP-47/POSIX tags such as `en-US`, `zh-Hans`, `zh_CN.UTF-8`, `zh-HK`, `zh-Hant`).
+- Automatic locale resolution: `--lang` > `LIANDI_LANG` > `LC_ALL` > `LC_MESSAGES` > `LANG` > system locale > `en`.
+- Localized all terminal output: `--help` and subcommand help (including section headings and default-value notes), all human-readable read renderers and write confirmations, dry-run/cancelled/error status lines, interactive confirmation prompts, and human-mode CLI error messages.
+- `--format json` (`-j`) output remains completely unchanged and locale-independent so scripts and agents retain a single stable contract.
+- Added full documentation in all three languages: `README.md` (zh-CN), `README.zh-TW.md` (zh-TW), `README.en.md` (en), plus `docs/zh-CN/` and `docs/zh-TW/` translations of `authentication.md`, `live-verification.md`, and `publishing.md`, with top-of-page language switchers.
+- Updated the bundled agent skill (`skills/liandi/`) to document `--lang` and `LIANDI_LANG`.
+- Exported `resolveLocale`, `SUPPORTED_LOCALES`, `DEFAULT_LOCALE`, and `Locale` from the package entrypoint.
+
 ## v0.2.0 — 2026-11-22
 
 Read commands now render for people by default, and `--format` makes the choice explicit.

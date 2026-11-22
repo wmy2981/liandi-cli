@@ -4,11 +4,12 @@ import { createInterface } from 'node:readline/promises';
 import { baseUrl, resolveToken } from './config.js';
 import { definitions, readableNoticeType } from './catalog.js';
 import { LiandiError } from './errors.js';
+import { messages, normalizeLocaleTag, resolveLocale, type Locale } from './i18n.js';
 import { defaultIO, errorEnvelope, execute, type GlobalOptions, type IO } from './runtime.js';
 import { formatOutput, resolveColor, type ColorMode, type OutputEnvelope, type OutputFormat } from './output.js';
 import { installSkill, skillPaths } from './skill.js';
 
-interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string }
+interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string; locale?: Locale }
 
 /** Last resolved command, used to label errors thrown after option parsing. */
 let lastCommand = 'liandi';
@@ -22,9 +23,9 @@ function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } 
   const globals: GlobalOptions = {};
   const rest: string[] = [];
   let jsonFlag = false;
-  const values: Record<string, 'token' | 'baseUrl' | 'color' | 'format'> = {
+  const values: Record<string, 'token' | 'baseUrl' | 'color' | 'format' | 'lang'> = {
     '--token': 'token', '-t': 'token', '--base-url': 'baseUrl', '-b': 'baseUrl',
-    '--color': 'color', '--format': 'format',
+    '--color': 'color', '--format': 'format', '--lang': 'lang',
   };
   const booleans: Record<string, keyof GlobalOptions> = { '--dry-run': 'dryRun', '-d': 'dryRun', '--yes': 'yes', '-y': 'yes' };
   for (let index = 0; index < argv.length; index += 1) {
@@ -47,6 +48,12 @@ function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } 
       if (values[name] === 'format') {
         if (!isFormat(value)) throw new LiandiError('--format must be human or json', 'INVALID_INPUT', 2);
         if (jsonFlag && value === 'human') throw new LiandiError('Use either --json or --format human, not both', 'INVALID_INPUT', 2);
+      }
+      if (values[name] === 'lang') {
+        const parsed = normalizeLocaleTag(value);
+        if (!parsed) throw new LiandiError('--lang must be en, zh-CN or zh-TW', 'INVALID_INPUT', 2);
+        globals.lang = parsed;
+        continue;
       }
       (globals as Record<string, string | boolean | undefined>)[values[name]!] = value;
     } else if (name in booleans) {
@@ -97,57 +104,60 @@ export function isWriteCommand(argv: string[]): boolean {
   return WRITE.has(action);
 }
 
-/** Printed by every command: these flags are parsed before Commander sees them. */
-const GLOBAL_HELP = `
-Global options (can appear before or after commands):
-  -t, --token <token>       API token (highest-priority source)
-  -b, --base-url <url>      API server (default: https://ld246.com)
-  --format <format>         Output format: human (default) or json
-  -j, --json                Shorthand for --format json
-  -d, --dry-run             Preview a write; never send it
-  -y, --yes                 Execute a write without interactive confirmation
-  --color <when>            Colorize status lines and hints: auto, always, never
-  --no-color                Never colorize (same as --color never)
-  -v, --version             Show version
-  -h, --help                Show help
-
-Reads never use --dry-run/--yes. Writes always show a preview before confirmation.
---format human renders tables and summaries; --format json is the stable envelope for scripts.
-Authentication: --token > LIANDI_TOKEN > ./.env > ~/.config/liandi/.env
-Run "liandi <group> --help" for subcommands.`;
-
 export function createProgram(options: ProgramOptions = {}): Command {
   const env = options.env ?? process.env;
   const io = options.io ?? defaultIO;
   const version = options.version ?? packageVersion();
+  const locale = options.locale ?? resolveLocale(undefined, env);
+  const t = messages(locale);
   const program = new Command();
   let invocationGlobals: GlobalOptions = {};
-  program.name('liandi').description('Human and agent friendly CLI for the ld246.com community API')
-    .version(version, '-v, --version', 'Show version').helpOption('-h, --help', 'Show help')
-    .configureHelp({ sortSubcommands: true, sortOptions: true })
+  const helpConfig = {
+    sortSubcommands: true,
+    sortOptions: true,
+    styleTitle: (title: string) => t.help.headings[title as keyof typeof t.help.headings] ?? title,
+    optionDescription: (option: { description: string; defaultValue?: unknown; defaultValueDescription?: string; required?: boolean; optional?: boolean; isBoolean(): boolean }) => {
+      if (option.defaultValue !== undefined) {
+        const showDefault = option.required || option.optional || (option.isBoolean() && typeof option.defaultValue === 'boolean');
+        if (showDefault) {
+          const rendered = t.help.defaultValue(option.defaultValueDescription || JSON.stringify(option.defaultValue));
+          if (!option.description) return rendered;
+          return locale === 'en' ? `${option.description} ${rendered}` : `${option.description}${rendered}`;
+        }
+      }
+      return option.description;
+    },
+  };
+  program.name('liandi').description(t.help.description)
+    .version(version, '-v, --version', t.help.showVersion)
+    .helpOption('-h, --help', t.help.showHelp)
+    .helpCommand('help [command]', t.help.helpCommand)
+    .configureHelp(helpConfig)
     .configureOutput({
       writeOut: text => { io.stdout.write(text); },
       writeErr: text => { io.stderr.write(text); },
       // Errors are rendered once, by run(), so Commander must not print them itself.
       outputError: () => {},
     })
-    .addHelpText('after', GLOBAL_HELP).exitOverride();
+    .addHelpText('after', t.help.globalFooter).exitOverride();
 
   const perform = async (name: string, args: string[], values: Values): Promise<void> => {
     lastCommand = name;
     const definition = definitions[name];
     if (!definition) throw new LiandiError('Internal command mapping is missing', 'INTERNAL_ERROR');
     const globals = invocationGlobals;
+    const activeLocale = globals.lang ?? locale;
     const resolved = resolveToken(globals.token, env);
     const server = baseUrl(env, globals.baseUrl);
     const rendered = await execute(name, await definition.request(args, values), {
-      ...globals, baseUrl: globals.baseUrl, token: resolved.token,
+      ...globals, lang: activeLocale, baseUrl: globals.baseUrl, token: resolved.token,
     }, io, version, env, definition);
     io.stdout.write(formatOutput(rendered, {
       format: globals.format ?? 'human',
       color: resolveColor(globals.color, io.stdout, env),
       width: io.stdout.columns,
       baseUrl: server,
+      locale: activeLocale,
     }) + '\n');
   };
 
@@ -159,88 +169,90 @@ export function createProgram(options: ProgramOptions = {}): Command {
   const run = (command: Command, handler: (...args: any[]) => Promise<void>) => command.action(handler);
 
   const articleOptions = (command: Command) => command
-    .requiredOption('--title <title>', 'Article title')
-    .requiredOption('--tags <tags>', 'Comma-separated tags')
-    .option('-c, --content <text>', 'Inline article content')
-    .option('-f, --content-file <path>', 'Read content from a UTF-8 Markdown/HTML file')
-    .option('--content-type <type>', 'markdown or html', 'markdown')
-    .option('--reward-content <text>', 'Reward-area content', '')
-    .option('--reward-point <number>', 'Reward points', '0');
+    .requiredOption('--title <title>', t.help.options.title)
+    .requiredOption('--tags <tags>', t.help.options.tags)
+    .option('-c, --content <text>', t.help.options.articleContent)
+    .option('-f, --content-file <path>', t.help.options.contentFile)
+    .option('--content-type <type>', t.help.options.contentType, 'markdown')
+    .option('--reward-content <text>', t.help.options.rewardContent, '')
+    .option('--reward-point <number>', t.help.options.rewardPoint, '0');
   const commentOptions = (command: Command) => command
-    .option('-c, --content <text>', 'Inline comment content')
-    .option('-f, --content-file <path>', 'Read content from a UTF-8 Markdown/HTML file')
-    .option('--content-type <type>', 'markdown or html', 'markdown');
+    .option('-c, --content <text>', t.help.options.commentContent)
+    .option('-f, --content-file <path>', t.help.options.contentFile)
+    .option('--content-type <type>', t.help.options.contentType, 'markdown');
 
-  const article = group('article', 'Read, post and edit articles', 'a', 'articles');
-  run(article.command('list').description('List articles')
-    .option('-s, --sort <sort>', 'latest, hot, good, reply, perfect', 'latest')
-    .option('-p, --page <page>', 'Page number', '1')
-    .option('--tag <tag>', 'Filter by tag')
-    .option('--domain <domain>', 'Filter by domain (latest sort only)'), async (v: Values) => perform('articles.list', [], v));
-  run(article.command('get <id>').description('Article with paginated comments')
-    .option('-p, --page <page>', 'Comment page number', '1'), async (id: string, v: Values) => perform('articles.get', [id], v));
-  run(articleOptions(article.command('post').description('Publish an article (write)')), async (v: Values) => perform('articles.post', [], v));
-  run(article.command('source <id>').description('Get an article for updating'), async (id: string) => perform('articles.source', [id], {}));
-  run(articleOptions(article.command('edit <id>').description('Update an article (write)'))
-    .requiredOption('--type <number>', 'Article type from "article source"'), async (id: string, v: Values) => perform('articles.edit', [id], v));
+  const article = group('article', t.help.commands.article, 'a', 'articles');
+  run(article.command('list').description(t.help.commands.articleList)
+    .option('-s, --sort <sort>', t.help.options.sort, 'latest')
+    .option('-p, --page <page>', t.help.options.page, '1')
+    .option('--tag <tag>', t.help.options.tag)
+    .option('--domain <domain>', t.help.options.domain), async (v: Values) => perform('articles.list', [], v));
+  run(article.command('get <id>').description(t.help.commands.articleGet)
+    .option('-p, --page <page>', t.help.options.commentPage, '1'), async (id: string, v: Values) => perform('articles.get', [id], v));
+  run(articleOptions(article.command('post').description(t.help.commands.articlePost)), async (v: Values) => perform('articles.post', [], v));
+  run(article.command('source <id>').description(t.help.commands.articleSource), async (id: string) => perform('articles.source', [id], {}));
+  run(articleOptions(article.command('edit <id>').description(t.help.commands.articleEdit))
+    .requiredOption('--type <number>', t.help.options.articleType), async (id: string, v: Values) => perform('articles.edit', [id], v));
 
-  const comment = group('comment', 'Post and edit comments', 'c', 'comments');
-  run(commentOptions(comment.command('post <article-id>').description('Comment on an article (write)'))
-    .option('-r, --reply-to <comment-id>', 'Original comment ID when replying'), async (id: string, v: Values) => perform('comments.post', [id], v));
-  run(commentOptions(comment.command('edit <id>').description('Update your comment (write)'))
-    .option('--visible <boolean>', 'true: only the author can see it; false: public'), async (id: string, v: Values) => perform('comments.edit', [id], v));
+  const comment = group('comment', t.help.commands.comment, 'c', 'comments');
+  run(commentOptions(comment.command('post <article-id>').description(t.help.commands.commentPost))
+    .option('-r, --reply-to <comment-id>', t.help.options.replyTo), async (id: string, v: Values) => perform('comments.post', [id], v));
+  run(commentOptions(comment.command('edit <id>').description(t.help.commands.commentEdit))
+    .option('--visible <boolean>', t.help.options.visible), async (id: string, v: Values) => perform('comments.edit', [id], v));
 
-  for (const [name, aliases, description, label] of [
-    ['domain', ['dom', 'domains'], 'List and inspect domains', 'domain'],
-    ['tag', ['tags'], 'List and inspect tags', 'tag'],
+  for (const [name, aliases, description, listDesc, getDesc, label] of [
+    ['domain', ['dom', 'domains'], t.help.commands.domain, t.help.commands.domainList, t.help.commands.domainGet, 'domain'],
+    ['tag', ['tags'], t.help.commands.tag, t.help.commands.tagList, t.help.commands.tagGet, 'tag'],
   ] as const) {
     const parent = group(name, description, ...aliases);
-    run(parent.command('list').description(`List ${name}s`).option('-p, --page <page>', 'Page number', '1'),
+    run(parent.command('list').description(listDesc).option('-p, --page <page>', t.help.options.page, '1'),
       async (v: Values) => perform(`${name}s.list`, [], v));
-    run(parent.command(`get <${label}>`).description(`One ${name}`), async (id: string) => perform(`${name}s.get`, [id], {}));
+    run(parent.command(`get <${label}>`).description(getDesc), async (id: string) => perform(`${name}s.get`, [id], {}));
   }
 
-  const user = group('user', 'Profiles, activity and social lists', 'u', 'users');
-  run(user.command('me').description('Current authenticated user'), async () => perform('users.me', [], {}));
-  run(user.command('get <name>').description('Profile by username, or by user number with --number')
-    .option('-n, --number', 'Treat <name> as a user number'), async (name: string, v: Values) => perform('users.get', [name], v));
+  const user = group('user', t.help.commands.user, 'u', 'users');
+  run(user.command('me').description(t.help.commands.userMe), async () => perform('users.me', [], {}));
+  run(user.command('get <name>').description(t.help.commands.userGet)
+    .option('-n, --number', t.help.options.userNumber), async (name: string, v: Values) => perform('users.get', [name], v));
   for (const [subcommand, description] of [
-    ['articles', 'Articles by a user'], ['comments', 'Comments by a user'],
-    ['watches', 'Articles watched by a user'], ['follows', 'Users followed by a user'],
-    ['tags', 'Tags followed by a user'], ['stars', 'Articles favorited by a user'],
-    ['followers', 'Followers of a user'],
+    ['articles', t.help.commands.userArticles], ['comments', t.help.commands.userComments],
+    ['watches', t.help.commands.userWatches], ['follows', t.help.commands.userFollows],
+    ['tags', t.help.commands.userTags], ['stars', t.help.commands.userStars],
+    ['followers', t.help.commands.userFollowers],
   ] as const) {
-    run(user.command(`${subcommand} <name>`).description(description).option('-p, --page <page>', 'Page number', '1'),
+    run(user.command(`${subcommand} <name>`).description(description).option('-p, --page <page>', t.help.options.page, '1'),
       async (name: string, v: Values) => perform(`users.${subcommand}`, [name], v));
   }
-  run(user.command('events <name>').description('Recent activity').option('-s, --size <size>', 'Number of events, 1-64', '16'),
+  run(user.command('events <name>').description(t.help.commands.userEvents).option('-s, --size <size>', t.help.options.eventSize, '16'),
     async (name: string, v: Values) => perform('users.events', [name], v));
 
-  const notice = group('notice', 'Read notifications and mark them read', 'n', 'notifications');
-  run(notice.command('unread').description('Unread count'), async () => perform('notices.unread', [], {}));
+  const notice = group('notice', t.help.commands.notice, 'n', 'notifications');
+  run(notice.command('unread').description(t.help.commands.noticeUnread), async () => perform('notices.unread', [], {}));
   for (const type of ['commented', 'comment2ed', 'reply', 'at', 'following', 'point', 'broadcast', 'wallet', 'sys-announce']) {
-    run(notice.command(type).description(`List ${type} notifications`).option('-p, --page <page>', 'Page number', '1'),
+    run(notice.command(type).description(t.help.commands.noticeType(type)).option('-p, --page <page>', t.help.options.page, '1'),
       async (v: Values) => perform(`notices.${type}`, [], v));
   }
-  run(notice.command('read <type>').description('Mark commented, comment2ed, reply, at or following as read (write)'),
+  run(notice.command('read <type>').description(t.help.commands.noticeRead),
     async (type: string) => perform(`notices.read.${readableNoticeType(type)}`, [], {}));
 
-  const top = group('top', 'Leaderboards', 'tops');
-  run(top.command('newbies').description('Newly registered users'), async () => perform('tops.newbies', [], {}));
-  run(top.command('followers').description('Users ranked by followers'), async () => perform('tops.followers', [], {}));
+  const top = group('top', t.help.commands.top, 'tops');
+  run(top.command('newbies').description(t.help.commands.topNewbies), async () => perform('tops.newbies', [], {}));
+  run(top.command('followers').description(t.help.commands.topFollowers), async () => perform('tops.followers', [], {}));
 
-  run(program.command('time').description('Current server time'), async () => perform('system.time', [], {}));
+  run(program.command('time').description(t.help.commands.time), async () => perform('system.time', [], {}));
 
-  run(group('skill', 'Install the bundled agent skill').command('install').description('Install or update ~/.agents/skills/liandi (local file write)'),
+  run(group('skill', t.help.commands.skill).command('install').description(t.help.commands.skillInstall),
     async () => {
       lastCommand = 'skill.install';
       const globals = invocationGlobals;
+      const activeLocale = globals.lang ?? locale;
       const format = globals.format ?? 'human';
       const rendering = {
         format,
         color: resolveColor(globals.color, io.stdout, env),
         width: io.stdout.columns,
         baseUrl: baseUrl(env, globals.baseUrl),
+        locale: activeLocale,
       };
       const preview = { action: 'install or update', destination: skillPaths().destination };
       if (globals.dryRun) {
@@ -258,7 +270,7 @@ export function createProgram(options: ProgramOptions = {}): Command {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           try { return await rl.question(prompt); } finally { rl.close(); }
         });
-        if (!/^y(?:es)?$/iu.test((await confirm('Install this skill? [y/N] ')).trim())) {
+        if (!/^y(?:es)?$/iu.test((await confirm(messages(activeLocale).output.confirmSkill)).trim())) {
           io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, rendering) + '\n');
           return;
         }
@@ -276,13 +288,15 @@ export function createProgram(options: ProgramOptions = {}): Command {
     lastCommand = typedCommand(rest);
     return originalParseAsync(rest, { from: 'user' });
   };
-  const addGlobalHelp = (parent: Command): void => {
+  const configureChildren = (parent: Command): void => {
     for (const child of parent.commands) {
-      child.addHelpText('after', GLOBAL_HELP);
-      addGlobalHelp(child);
+      child.helpOption('-h, --help', t.help.showHelp);
+      if (child.commands.length > 0) child.helpCommand('help [command]', t.help.helpCommand);
+      child.addHelpText('after', t.help.globalFooter);
+      configureChildren(child);
     }
   };
-  addGlobalHelp(program);
+  configureChildren(program);
   return program;
 }
 
@@ -301,6 +315,13 @@ function formatFromArgv(argv: string[]): OutputFormat {
   return index >= 0 && argv[index + 1] === 'json' ? 'json' : 'human';
 }
 
+function langFromArgv(argv: string[]): string | undefined {
+  const inline = argv.find(arg => arg.startsWith('--lang='));
+  if (inline) return inline.slice('--lang='.length);
+  const index = argv.indexOf('--lang');
+  return index >= 0 ? argv[index + 1] : undefined;
+}
+
 export async function run(argv: string[], options: ProgramOptions = {}): Promise<number> {
   const io = options.io ?? defaultIO;
   const env = options.env ?? process.env;
@@ -311,13 +332,14 @@ export async function run(argv: string[], options: ProgramOptions = {}): Promise
   })();
   const format = pending?.format ?? formatFromArgv(argv);
   const color = resolveColor(pending?.color, io.stderr, env);
+  const locale = options.locale ?? resolveLocale(pending?.lang ?? langFromArgv(argv), env);
   try {
-    await createProgram(options).parseAsync(argv, { from: 'user' });
+    await createProgram({ ...options, locale }).parseAsync(argv, { from: 'user' });
     return 0;
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.version'].includes(error.code)) return 0;
     const known = normalizeError(error);
-    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), { format, color }) + '\n');
+    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), { format, color, locale }) + '\n');
     // Unexpected exceptions are runtime failures: never report them as success.
     return known instanceof LiandiError ? known.exitCode : 1;
   }

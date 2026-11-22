@@ -35,7 +35,17 @@ const tarball = join(work, packOutput.trim().split('\n').at(-1));
 if (!existsSync(tarball)) throw new Error(`tarball not created: ${tarball}`);
 
 const entries = run('tar', ['-tzf', tarball]).split('\n').map(entry => entry.trim()).filter(Boolean);
-for (const required of ['package/dist/cli.js', 'package/dist/skills/liandi/SKILL.md', 'package/dist/skills/liandi/references/commands.md', 'package/package.json']) {
+for (const required of [
+  'package/dist/cli.js',
+  'package/dist/skills/liandi/SKILL.md',
+  'package/dist/skills/liandi/references/commands.md',
+  'package/README.md',
+  'package/README.zh-TW.md',
+  'package/README.en.md',
+  'package/docs/zh-CN/publishing.md',
+  'package/docs/zh-TW/publishing.md',
+  'package/package.json',
+]) {
   if (!entries.includes(required)) throw new Error(`tarball is missing ${required}`);
 }
 if (entries.some(entry => entry.startsWith('package/src/'))) throw new Error('tarball should not ship TypeScript sources');

@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { render } from '../src/render.js';
 
-const context = { width: 100, baseUrl: 'https://ld246.com' };
+const context = { width: 100, baseUrl: 'https://ld246.com', locale: 'zh-CN' as const };
+const enContext = { width: 100, baseUrl: 'https://ld246.com', locale: 'en' as const };
+const twContext = { width: 100, baseUrl: 'https://ld246.com', locale: 'zh-TW' as const };
 
 /** Live payload wrapper: every response carries code/msg/random around `data`. */
 const wrap = (data: unknown) => ({ code: 0, msg: '', random: 'r', data });
@@ -178,5 +180,53 @@ describe('write confirmations and fallbacks', () => {
       expect(() => render(command, undefined, context)).not.toThrow();
       expect(() => render(command, wrap(null), context)).not.toThrow();
     }
+  });
+});
+
+describe('multi-locale rendering (en and zh-TW)', () => {
+  it('renders articles, users, notifications, time and writes in English', () => {
+    const feed = render('articles.list', wrap({ pagination: { paginationPageCount: 2991 }, articles: [article] }), enContext);
+    expect(feed).toContain('6 replies · 10 views');
+    expect(feed).toContain('Showing 1 · 2991 pages');
+    expect(render('articles.list', wrap({ articles: [] }), enContext)).toBe('No articles.');
+
+    const profile = render('users.me', wrap({ user }), enContext);
+    expect(profile).toContain('Username');
+    expect(profile).toContain('Articles / Comments  6 / 167');
+
+    const unread = render('notices.unread', wrap({ unreadNotificationCnt: 3, unreadAtNotificationCnt: 1 }), enContext);
+    expect(unread).toContain('Mentions');
+    expect(unread).toContain('4 unread total');
+
+    const time = render('system.time', wrap(1795322987467), enContext);
+    expect(time).toContain('Server Time');
+    expect(time).toContain('(local time)');
+
+    expect(render('articles.post', wrap({ article }), enContext)).toContain('Article published\nLink  https://ld246.com/article/1795318034189');
+    expect(render('notices.read.at', wrap(null), enContext)).toBe('Marked mention notifications as read');
+    expect(render('skill.install', { destination: '/tmp/liandi', files: ['SKILL.md', 'references/commands.md'] }, enContext)).toContain('Skill installed or updated');
+  });
+
+  it('renders articles, users, notifications, time and writes in Traditional Chinese', () => {
+    const feed = render('articles.list', wrap({ pagination: { paginationPageCount: 2991 }, articles: [article] }), twContext);
+    expect(feed).toContain('6 回覆 · 10 瀏覽');
+    expect(feed).toContain('本頁 1 則 · 共 2991 頁');
+    expect(render('articles.list', wrap({ articles: [] }), twContext)).toBe('沒有貼文。');
+
+    const profile = render('users.me', wrap({ user }), twContext);
+    expect(profile).toContain('使用者名稱');
+    expect(profile).toContain('文章 / 回覆  6 / 167');
+
+    const unread = render('notices.unread', wrap({ unreadNotificationCnt: 3, unreadAtNotificationCnt: 1 }), twContext);
+    expect(unread).toContain('提及我');
+    expect(unread).toContain('合計 4 則未讀');
+
+    const time = render('system.time', wrap(1795322987467), twContext);
+    expect(time).toContain('伺服器時間');
+    expect(time).toContain('（本地時區）');
+
+    expect(render('articles.post', wrap({ article }), twContext)).toContain('已發布貼文\n連結  https://ld246.com/article/1795318034189');
+    expect(render('notices.read.at', wrap(null), twContext)).toBe('已將提及通知標記為已讀');
+    expect(render('skill.install', { destination: '/tmp/liandi', files: ['SKILL.md'] }, twContext)).toContain('技能已安裝或更新');
   });
 });

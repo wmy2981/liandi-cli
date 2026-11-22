@@ -67,6 +67,23 @@ describe('output', () => {
     expect(text).not.toContain('\u001B');
     expect(JSON.parse(text).error.code).toBe('X');
   });
+  it('localizes human status lines and errors while leaving JSON untouched', () => {
+    expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, { locale: 'zh-CN' })).toContain('预览模式：未发送请求。');
+    expect(formatOutput({ ok: true, status: 'cancelled' }, { locale: 'zh-CN' })).toBe('已取消：未发送请求。');
+    expect(formatOutput({ ok: false, status: 'error', error: { code: 'INVALID_INPUT', message: 'Expected true or false' } }, { locale: 'zh-CN' }))
+      .toBe('错误 [INVALID_INPUT]：需要 true 或 false');
+
+    expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, { locale: 'zh-TW' })).toContain('預覽模式：未傳送請求。');
+    expect(formatOutput({ ok: true, status: 'cancelled' }, { locale: 'zh-TW' })).toBe('已取消：未傳送請求。');
+    expect(formatOutput({ ok: false, status: 'error', error: { code: 'INVALID_INPUT', message: 'Expected true or false' } }, { locale: 'zh-TW' }))
+      .toBe('錯誤 [INVALID_INPUT]：需要 true 或 false');
+
+    const json = formatOutput(
+      { ok: false, status: 'error', error: { code: 'INVALID_INPUT', message: 'Expected true or false' } },
+      { format: 'json', locale: 'zh-TW' },
+    );
+    expect(JSON.parse(json).error.message).toBe('Expected true or false');
+  });
   it('resolves color from flags, environment and the target stream', () => {
     expect(resolveColor('always', { isTTY: false }, {})).toBe(true);
     expect(resolveColor('never', { isTTY: true }, {})).toBe(false);

@@ -1,11 +1,14 @@
 # liandi
 
+简体中文 | [繁體中文](README.zh-TW.md) | [English](README.en.md)
+
 面向人类和 Agent 的 [链滴 ld246.com](https://ld246.com) 命令行客户端。TypeScript 实现，覆盖[官方社区客户端 API 文档](https://ld246.com/article/1488603534762)列出的所有操作。
 
 ## 特性
 
 - 完整支持帖子、回帖、领域、标签、用户、通知、榜单和系统时间接口。
 - 默认人类可读输出：列表成表格或分块，详情是字段摘要；`--format json`（简写 `-j`）提供统一、稳定的机器可读信封。
+- 终端输出与文档支持简体中文（`zh-CN`）、繁体中文（`zh-TW`）和英语（`en`），自动检测系统语言并支持 `--lang` / `LIANDI_LANG` 覆盖；JSON 输出保持语言无关。
 - 表格按终端宽度自适应，中文字符按双宽计算，不会把一行挤成两行。
 - 写操作默认先展示请求预览，再交互确认；`-d, --dry-run` 仅预览，`-y, --yes` 确认执行。
 - `--content` 内联正文或 `--content-file` 读取 UTF-8 Markdown/HTML 文件。
@@ -124,6 +127,26 @@ liandi article list -j               # 等同于 --format json
 ```
 
 `--format json` 与 `-j` 输出完全一致；`-j --format human` 这类冲突组合按 `INVALID_INPUT`（退出码 2）拒绝。
+
+### 语言设置（i18n）
+
+终端输出（帮助信息、人类可读列表/摘要、状态提示、交互确认和错误提示）支持三种语言：`zh-CN`（简体中文）、`zh-TW`（繁體中文）和 `en`（English）。
+
+```sh
+liandi article list --lang zh-CN
+liandi article list --lang zh-TW
+liandi article list --lang en
+liandi --help --lang zh-TW
+```
+
+语言检测优先级从高到低：
+
+1. `--lang <locale>`（支持标准标签及常见别名，如 `zh-CN`/`zh-Hans`/`zh`、`zh-TW`/`zh-HK`/`zh-Hant`、`en`/`en-US`）
+2. 进程环境变量 `LIANDI_LANG`
+3. POSIX 环境变量 `LC_ALL` > `LC_MESSAGES` > `LANG`
+4. 系统区域设置（Windows / macOS / Linux 自动识别），未命中时回退为 `en`
+
+`--format json`（`-j`）输出始终保持语言无关，不受 `--lang` 或系统语言影响，以保证脚本和 Agent 解析契约稳定。
 
 ### 彩色终端
 
@@ -268,7 +291,7 @@ npm pack --dry-run
 
 ## 真实环境验证
 
-部分只读接口与最小写操作已在真实环境验证，结论（含返回结构细节、错误码映射、匿名访问被拒）见 [docs/live-verification.md](docs/live-verification.md)。
+部分只读接口与最小写操作已在真实环境验证，结论（含返回结构细节、错误码映射、匿名访问被拒）见 [docs/zh-CN/live-verification.md](docs/zh-CN/live-verification.md)（鉴权说明见 [docs/zh-CN/authentication.md](docs/zh-CN/authentication.md)）。
 
 ## 不提供的能力
 
@@ -299,7 +322,7 @@ npm pack --dry-run
 
 ## 版本与发布
 
-遵循语义化版本，`vX.Y.Z` tag 推送到 `main` 会自动发布到 npm 并创建 GitHub Release。手动触发 Release 工作流默认同样发布（只允许从 `main` 或 release tag 触发），需要演练时请显式勾选 `dry_run`。普通分支推送只跑测试。版本号、发布步骤与 npm token 配置见 [docs/publishing.md](docs/publishing.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
+遵循语义化版本，`vX.Y.Z` tag 推送到 `main` 会自动发布到 npm 并创建 GitHub Release。手动触发 Release 工作流默认同样发布（只允许从 `main` 或 release tag 触发），需要演练时请显式勾选 `dry_run`。普通分支推送只跑测试。版本号、发布步骤与 npm token 配置见 [docs/zh-CN/publishing.md](docs/zh-CN/publishing.md)，变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```sh
 npm run release:patch   # 或 release:minor / release:major

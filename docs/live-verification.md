@@ -1,5 +1,7 @@
 # Live verification (2026-11-15)
 
+[简体中文](zh-CN/live-verification.md) | [繁體中文](zh-TW/live-verification.md) | English
+
 Read paths and a minimal set of writes were exercised against the real ld246.com API with a real account token. No article was published and no article was edited.
 
 ## Confirmed against the live service
