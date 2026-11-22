@@ -15,10 +15,16 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const work = mkdtempSync(join(tmpdir(), 'liandi-pack-'));
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-// Windows exposes npm as a .cmd shim that execFileSync cannot spawn directly.
+// Windows exposes npm as a .cmd shim, which Node refuses to spawn without a shell.
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
-const run = (command, args, options = {}) =>
-  execFileSync(command, args, { stdio: 'pipe', encoding: 'utf8', ...options });
+const quote = value => (/[\s"]/u.test(value) ? `"${value.replaceAll('"', '""')}"` : value);
+const run = (command, args, options = {}) => {
+  const base = { stdio: 'pipe', encoding: 'utf8', ...options };
+  if (command === npm && process.platform === 'win32') {
+    return execFileSync([command, ...args].map(quote).join(' '), { ...base, shell: true });
+  }
+  return execFileSync(command, args, base);
+};
 
 console.log('1. building');
 run(npm, ['run', 'build'], { cwd: root });
