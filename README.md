@@ -4,9 +4,9 @@
 
 ## 特性
 
-- 完整支持帖子、回帖、领域、标签、用户、通知、榜单、登录和系统时间接口。
-- 默认格式化 JSON 数据；`-j, --json` 提供统一、稳定的机器可读信封。
-- 人类可读输出在 TTY 中给状态行和提示上色，管道与 `-j` 输出保持纯文本。
+- 完整支持帖子、回帖、领域、标签、用户、通知、榜单和系统时间接口。
+- 默认人类可读输出：列表成表格或分块，详情是字段摘要；`--format json`（简写 `-j`）提供统一、稳定的机器可读信封。
+- 表格按终端宽度自适应，中文字符按双宽计算，不会把一行挤成两行。
 - 写操作默认先展示请求预览，再交互确认；`-d, --dry-run` 仅预览，`-y, --yes` 确认执行。
 - `--content` 内联正文或 `--content-file` 读取 UTF-8 Markdown/HTML 文件。
 - 每级配置独立管理 API Token，日志和预览不输出凭据。
@@ -63,9 +63,9 @@ npm link          # 之后全局可用 liandi
 Authorization: token <API Token>
 ```
 
-这不是 `Bearer` 认证。`auth login` / `auth 2fa` 返回的是**登录会话 token**，用于 `symphony` Cookie 和两步验证，**不是 API Token，不能填入 `LIANDI_TOKEN` 替代它**。本 CLI 不会自动持久化登录会话 token。
+这不是 `Bearer` 认证，也不是网页登录的 `symphony` Cookie 会话。本 CLI 只使用 API Token：账号密码登录（`/api/v2/login`、`/api/v2/login/2fa`）返回的会话 token 只在两步验证流程里有效，不能当 API Token 用，因此 `auth` 命令组已移除，登录请走网页端。
 
-只要配置了 Token，CLI 就会对所有 v2 请求附带它（登录/两步验证除外）；未配置时仍会尝试匿名读取。实测 ld246.com 对无 Token 的 `/api/v2/*` 请求普遍返回 401，因此除纯公开读取外建议始终配置 Token。
+只要配置了 Token，CLI 就会对所有 v2 请求附带它；未配置时仍会尝试匿名读取。实测 ld246.com 对无 Token 的 `/api/v2/*` 请求普遍返回 401，因此除纯公开读取外建议始终配置 Token。
 
 Token 来源优先级从高到低：
 
@@ -86,13 +86,44 @@ chmod 600 .env
 
 ## 输出约定
 
-### 人类阅读
+### 人类阅读（默认）
 
-默认将上游响应格式化为 JSON 文本。错误写到 stderr：
+默认 `--format human`：列表命令渲染成表格或紧凑分块，详情命令渲染成字段摘要，管道里也一样。错误写到 stderr：
 
 ```text
 Error [AUTH_REQUIRED]: API token required. ...
 ```
+
+帖子列表每项三行（标题 / 作者·时间·回帖·浏览 / 链接）：
+
+```text
+ 1. 为什么复制后光标会跑到行首？
+    inessence · 2026-11-22 11:27:13 · 6 回帖 · 10 浏览
+    https://ld246.com/article/1795318034189
+
+本页 20 条 · 共 2991 页
+```
+
+短字段列表（用户、标签、领域）用对齐表格，按终端宽度收缩，中文按双宽计算：
+
+```text
+用户名           昵称    文章  回帖  积分  主页
+───────────────  ──────  ────  ────  ────  ─────────────────────────────────────────────────────
+yoss             Yoss        6   167  2270  https://ld246.com/member/yoss
+```
+
+`user me`、`article get`、`tag get`、`domain get` 输出字段摘要与分段正文/简介。上游结构变化导致无法识别时，自动退化成只输出 `data` 的 JSON，不会打印半空表格。
+
+### 显式选择格式
+
+```sh
+liandi article list                  # 人类可读（默认）
+liandi article list --format human   # 同上，显式写出
+liandi article list --format json    # 稳定信封
+liandi article list -j               # 等同于 --format json
+```
+
+`--format json` 与 `-j` 输出完全一致；`-j --format human` 这类冲突组合按 `INVALID_INPUT`（退出码 2）拒绝。
 
 ### 彩色终端
 
@@ -102,7 +133,7 @@ Error [AUTH_REQUIRED]: API token required. ...
 
 ### Agent / 自动化
 
-在任意命令位置添加 `-j` 或 `--json`。stdout 始终只包含一个 JSON 对象：
+在任意命令位置添加 `--format json`、`-j` 或 `--json`。stdout 始终只包含一个 JSON 对象：
 
 ```json
 {
@@ -135,12 +166,12 @@ Error [AUTH_REQUIRED]: API token required. ...
 错误分三层，都会被转成上面的错误信封：
 
 1. HTTP 非 2xx（如 401/403/5xx）或响应不是 JSON；
-2. **上游 JSON `code != 0`**（HTTP 200 但业务失败），错误码为 `API_CODE_<code>`，`message` 取上游 `msg`。唯一例外是登录接口的 `code 10`（需要两步验证），它按成功返回并附带 `hint` 指引执行 `auth 2fa`；
+2. **上游 JSON `code != 0`**（HTTP 200 但业务失败），错误码为 `API_CODE_<code>`，`message` 取上游 `msg`；
 3. 本地参数/配置错误。
 
 ## 写操作安全流程
 
-发帖、更新、回帖、登录/登出、标记通知已读和技能安装均按写操作处理。
+发帖、更新、回帖、标记通知已读和技能安装均按写操作处理。
 
 ```sh
 # 1. 只预览，不发送请求
@@ -166,7 +197,7 @@ liandi article post --title "命令行工具发布" \
 - `--dry-run` 和 `--yes` 只适用于写操作，避免让读取命令的实际行为含糊。
 - `notice read` 虽为 GET，仍会改变状态，必须按写操作确认。
 - 官方说明 broadcast、wallet、sys-announce 通知拉取后自动已读，请注意这类读取的副作用。
-- `--token`、密码和两步验证码不出现在预览或成功输出中；`--password-stdin` 从标准输入读取一行且不回显。`auth login` 需要两步验证时会把服务端返回的会话 token 作为结果给出，供 `auth 2fa` 使用，请勿记录或粘贴。仍需自行保护终端和日志。
+- API Token 不出现在预览或成功输出中：预览只包含 `method`、`url` 和请求体。仍需自行保护终端和日志。
 
 ## 常用操作
 
@@ -204,29 +235,11 @@ liandi top followers
 liandi time
 ```
 
-命令刻意保持简短：`article list|get|post|edit|source`、`comment post|edit`、`user me|get|articles|comments|events|watches|follows|tags|stars|followers`、`notice unread|<type>|read`、`domain|tag list|get`、`top newbies|followers`、`auth login|2fa|logout`、`time`。也支持别名 `a`/`c`/`u`/`n`/`dom`/`tags`/`tops`。完整参数见 `liandi <group> --help` 或 [技能命令参考](skills/liandi/references/commands.md)。
+命令刻意保持简短：`article list|get|post|edit|source`、`comment post|edit`、`user me|get|articles|comments|events|watches|follows|tags|stars|followers`、`notice unread|<type>|read`、`domain|tag list|get`、`top newbies|followers`、`time`。也支持别名 `a`/`c`/`u`/`n`/`dom`/`tags`/`tops`。完整参数见 `liandi <group> --help` 或 [技能命令参考](skills/liandi/references/commands.md)。
 
 ### 正文文件
 
 `-c, --content <text>` 和 `-f, --content-file <path>` 二选一。默认 `--content-type markdown`；HTML 用 `--content-type html`。发帖/更新支持 `--reward-content`、`--reward-point`，更新另需从 `article source` 获取的 `--type`。更新是整体覆盖：标题、标签、正文、激励区都会按本次命令的取值重新提交。
-
-### 登录
-
-```sh
-liandi auth login -u <usernameOrEmail> --password-stdin --dry-run
-# 实际登录前确认预览，然后使用交互确认或 --yes
-liandi auth login -u <usernameOrEmail> --password-stdin
-```
-
-CLI 按官方要求本地计算密码 MD5 后发送。若服务端返回 `code=10`（需要两步验证），CLI 会照常返回该会话 token 并给出 `hint`，把它交给：
-
-```sh
-liandi auth 2fa --session-token <loginToken> --code <6位动态口令>
-```
-
-该会话 token 是登录凭证，不是 API Token：不会写入任何文件，请勿提交到仓库或贴进日志；预览输出中不会出现密码和验证码。
-
-验证码需求由服务端返回；CLI 不猜测或自动下载验证码。
 
 ## Agent 技能
 
@@ -245,11 +258,11 @@ npm run typecheck
 npm run build
 npm test
 npm run test:coverage
-node scripts/verify.mjs        # 全命令/全参数离线校验（117 项）
+node scripts/verify.mjs        # 全命令/全参数离线校验（110 项）
 npm pack --dry-run
 ```
 
-`node scripts/verify.mjs` 会启动本地模拟服务，逐项验证全部命令、全部参数、确认流程、密码读取、凭据优先级与错误映射（117 项），CI 每次提交都会跑。
+`node scripts/verify.mjs` 会启动本地模拟服务，逐项验证全部命令、全部参数、确认流程、输出格式、凭据优先级与错误映射（110 项），CI 每次提交都会跑。
 
 单元与集成测试使用模拟函数和本地 HTTP 服务，不访问 ld246.com，不需要真实 Token。接口路径测试覆盖文档中的全部操作；构建产物执行公共读取、确认写入和未确认拒绝的端到端测试。
 
@@ -272,11 +285,10 @@ npm pack --dry-run
 | 修改昵称、头像、签名、密码、邮箱 | 不提供 | 属于设置页接口，未包含在客户端 API 文档中 |
 | 积分转账、签到、兑换邀请码 | 不提供 | 无公开 v2 接口 |
 | 私聊 / 聊天会话 | 不提供 | 无公开 v2 接口 |
-| 登录验证码图片 | 不提供 | `/captcha/login` 返回图片而非 JSON，本 CLI 只处理 JSON；需要时请在网页端完成登录 |
+| `auth login` / `2fa` / `logout` | 已移除 | 账号密码登录只返回一次性会话，不产生可复用的 API 凭据；调用 API 只用 API Token，登录请走网页端 |
 | 自定义每页条数 | 不提供 | 服务端固定 20，只能翻页 |
-| 通过 API 登录后持久保存会话 | 不提供 | 只支持 API Token；登录接口仅用于验证凭据与两步验证 |
 
-可以做的写入只有：发帖、改帖（自己的）、发回帖、改回帖（自己的）、标记通知已读、登录/两步验证/登出。其余都是只读。
+可以做的写入只有：发帖、改帖（自己的）、发回帖、改回帖（自己的）、标记通知已读。其余都是只读。
 
 ## 范围与限制
 

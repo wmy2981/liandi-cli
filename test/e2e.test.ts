@@ -56,24 +56,15 @@ describe('built CLI with a local HTTP server', () => {
     expect(JSON.parse(request.body)).toMatchObject({ articleId: '123', commentContent: '测试', commentContentType: 'markdown' });
     expect(result.stdout).not.toContain('fake');
   });
-  it('reads a password from stdin without echoing or misusing it', async () => {
-    const preview = await cli(['auth', 'login', '-u', 'alice', '--password-stdin', '-d'], { input: 'piped-secret\n' });
-    expect(preview.code, preview.stderr).toBe(0);
-    expect(JSON.parse(preview.stdout).data.body).toMatchObject({ userName: 'alice', userPassword: '[REDACTED]' });
-    expect(preview.stdout + preview.stderr).not.toContain('piped-secret');
-  });
-  it('fails with a JSON error when --password-stdin has no input', async () => {
-    const before = requests.length;
-    const result = await cli(['auth', 'login', '-u', 'alice', '--password-stdin', '-y']);
-    expect(result.code).toBe(2);
-    expect(JSON.parse(result.stderr)).toMatchObject({ ok: false, error: { code: 'INVALID_INPUT' } });
-    expect(result.stdout).toBe('');
-    expect(requests.length).toBe(before);
-  });
   it('does not send a dry run or non-interactive unconfirmed write', async () => {
     const before = requests.length;
     expect((await cli(['comment', 'post', '123', '-c', 'test', '-d'])).code).toBe(0);
     expect((await cli(['comment', 'post', '123', '-c', 'test'])).code).toBe(2);
+    expect(requests.length).toBe(before);
+  });
+  it('rejects the removed auth group', async () => {
+    const before = requests.length;
+    expect((await cli(['auth', 'login'])).code).toBe(2);
     expect(requests.length).toBe(before);
   });
 });

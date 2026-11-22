@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import { ApiError, LiandiError } from './errors.js';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT';
@@ -8,7 +7,6 @@ export interface ApiRequest {
   path: string;
   query?: Record<string, string | number>;
   body?: Record<string, unknown>;
-  cookieToken?: string;
 }
 
 export interface ClientOptions {
@@ -22,8 +20,6 @@ export interface ClientOptions {
 export interface RequestOptions {
   /** Reject locally when no token is configured for a login-only endpoint. */
   auth?: boolean;
-  /** Omit Authorization even when a token exists (login and 2FA use their own flow). */
-  suppressAuth?: boolean;
 }
 
 export class LiandiClient {
@@ -47,7 +43,7 @@ export class LiandiClient {
     return url.href;
   }
 
-  headers(request: ApiRequest, requireAuth = false, suppressAuth = false): Record<string, string> {
+  headers(request: ApiRequest, requireAuth = false): Record<string, string> {
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'User-Agent': this.userAgent,
@@ -57,9 +53,8 @@ export class LiandiClient {
     }
     // Send the token on every call when available: many endpoints that accept
     // anonymous requests behave differently (or reject) without it.
-    if (this.options.token && !suppressAuth) headers.Authorization = `token ${this.options.token}`;
+    if (this.options.token) headers.Authorization = `token ${this.options.token}`;
     if (request.body !== undefined) headers['Content-Type'] = 'application/json; charset=utf-8';
-    if (request.cookieToken) headers.Cookie = `symphony=${request.cookieToken}`;
     return headers;
   }
 
@@ -69,7 +64,7 @@ export class LiandiClient {
     try {
       const response = await this.fetch(this.url(request), {
         method: request.method,
-        headers: this.headers(request, options.auth, options.suppressAuth),
+        headers: this.headers(request, options.auth),
         body: request.body === undefined ? undefined : JSON.stringify(request.body),
         signal: controller.signal,
       });
@@ -94,8 +89,4 @@ export class LiandiClient {
       clearTimeout(timeout);
     }
   }
-}
-
-export function md5(value: string): string {
-  return createHash('md5').update(value, 'utf8').digest('hex');
 }

@@ -1,6 +1,5 @@
 import { LiandiError } from './errors.js';
 import { boolean, content, contentType, encodeSegment, integer, positiveInteger, size } from './input.js';
-import { md5 } from './client.js';
 import type { ApiRequest } from './client.js';
 
 type Values = Record<string, string | boolean | undefined>;
@@ -10,8 +9,6 @@ export interface Definition {
   write: boolean;
   /** The endpoint requires a login, so reject locally when no token exists. */
   auth: boolean;
-  /** The request carries its own credential flow (login/2FA). */
-  suppressAuth?: boolean;
   request: (args: string[], values: Values) => Promise<ApiRequest>;
 }
 
@@ -156,22 +153,6 @@ const definitionsList: Definition[] = [
   })),
   { name: 'tops.newbies', write: false, auth: false, request: async () => ({ method: 'GET', path: '/api/v2/tops/users/newbies' }) },
   { name: 'tops.followers', write: false, auth: false, request: async () => ({ method: 'GET', path: '/api/v2/tops/users/followers' }) },
-  {
-    name: 'auth.login', write: true, auth: false, suppressAuth: true,
-    request: async (_args, v) => ({
-      method: 'POST',
-      path: '/api/v2/login',
-      body: { userName: v.username, userPassword: md5(String(v.password)), ...(v.captcha ? { captcha: v.captcha } : {}) },
-    }),
-  },
-  {
-    name: 'auth.2fa', write: true, auth: false, suppressAuth: true,
-    request: async (_args, v) => {
-      if (!/^\d{6}$/u.test(String(v.code))) throw new LiandiError('Two-factor code must be six digits', 'INVALID_INPUT', 2);
-      return { method: 'POST', path: '/api/v2/login/2fa', cookieToken: String(v.sessionToken), body: { twofactorAuthCode: v.code } };
-    },
-  },
-  { name: 'auth.logout', write: true, auth: true, request: async () => ({ method: 'POST', path: '/api/v2/logout' }) },
   { name: 'system.time', write: false, auth: false, request: async () => ({ method: 'GET', path: '/api/v2/system/time' }) },
 ];
 

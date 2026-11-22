@@ -27,17 +27,6 @@ describe('upstream business codes', () => {
       vi.unstubAllGlobals();
     }
   });
-  it('keeps code 10 of login as a successful intermediate step', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ code: 10, msg: 'need 2fa', token: 'session' }))));
-    try {
-      const result = await execute('auth.login', { method: 'POST', path: '/api/v2/login', body: {} }, globals, testIO(), '1', {}, write);
-      expect(result.status).toBe('success');
-      expect(result.hint).toContain('auth 2fa');
-      expect(result.data).toMatchObject({ token: 'session' });
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
 });
 
 describe('write safety', () => {
@@ -64,14 +53,14 @@ describe('write safety', () => {
   it('carries the preview in the error instead of writing it when a write is refused', async () => {
     const io = testIO();
     io.stdin.isTTY = false;
-    await expect(execute('comments.create', request, { ...globals, json: true }, io, '1', {}, write))
+    await expect(execute('comments.create', request, { ...globals, format: 'json' }, io, '1', {}, write))
       .rejects.toMatchObject({ code: 'CONFIRMATION_REQUIRED', details: { method: 'POST' } });
     expect(io.output).toBe('');
     expect(io.errors).toBe('');
   });
   it('keeps stdout to a single envelope in JSON mode', async () => {
     const io = testIO('n');
-    const result = await execute('comments.create', request, { ...globals, json: true }, io, '1', {}, write);
+    const result = await execute('comments.create', request, { ...globals, format: 'json' }, io, '1', {}, write);
     expect(result.status).toBe('cancelled');
     expect(io.output).toBe('');
     expect(io.errors).toContain('dry-run');

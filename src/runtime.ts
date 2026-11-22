@@ -3,19 +3,19 @@ import { stdin, stdout, stderr } from 'node:process';
 import { LiandiClient, type ApiRequest } from './client.js';
 import { baseUrl } from './config.js';
 import { LiandiError } from './errors.js';
-import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope } from './output.js';
+import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope, type OutputFormat } from './output.js';
 
 export interface GlobalOptions {
   token?: string;
   baseUrl?: string;
-  json?: boolean;
+  format?: OutputFormat;
   color?: ColorMode;
   dryRun?: boolean;
   yes?: boolean;
 }
 
 export interface IO {
-  stdout: { write(text: string): unknown; isTTY?: boolean };
+  stdout: { write(text: string): unknown; isTTY?: boolean; columns?: number };
   stderr: { write(text: string): unknown; isTTY?: boolean };
   stdin: { isTTY?: boolean };
   confirm?: (prompt: string) => Promise<string>;
@@ -36,8 +36,6 @@ export interface OperationOptions {
   write?: boolean;
   /** The endpoint requires a login, so reject locally when no token exists. */
   auth?: boolean;
-  /** The request carries its own credential flow (login/2FA). */
-  suppressAuth?: boolean;
 }
 
 export async function execute(
@@ -49,12 +47,19 @@ export async function execute(
   env: NodeJS.ProcessEnv = process.env,
   options: OperationOptions = {},
 ): Promise<OutputEnvelope> {
-  const client = new LiandiClient({ baseUrl: baseUrl(env, globals.baseUrl), version, token: globals.token });
+  const server = baseUrl(env, globals.baseUrl);
+  const client = new LiandiClient({ baseUrl: server, version, token: globals.token });
   const preview = () => redact({
     method: request.method,
     url: client.url(request),
     ...(request.body === undefined ? {} : { body: request.body }),
   });
+  const rendering = {
+    format: globals.format ?? 'human' as const,
+    color: resolveColor(globals.color, io.stdout, env),
+    width: io.stdout.columns,
+    baseUrl: server,
+  };
   if (options.write) {
     if (globals.dryRun) return { ok: true, status: 'dry-run', command, data: preview() };
     if (!globals.yes) {
@@ -62,8 +67,8 @@ export async function execute(
       const running: OutputEnvelope = { ok: true, status: 'dry-run', command, data: preview() };
       // stdout stays a single envelope in JSON mode; the preview is for the human
       // that has to confirm, and the error below carries it for everyone else.
-      if (!globals.json) io.stdout.write(formatOutput(running, false, resolveColor(globals.color, io.stdout, env)) + '\n');
-      else if (interactive) io.stderr.write(formatOutput(running, true) + '\n');
+      if (rendering.format === 'human') io.stdout.write(formatOutput(running, rendering) + '\n');
+      else if (interactive) io.stderr.write(formatOutput(running, { format: 'json' }) + '\n');
       if (!interactive) {
         throw new LiandiError('Confirmation required in a non-interactive terminal. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2, preview());
       }
@@ -74,27 +79,17 @@ export async function execute(
       const answer = await confirm('Execute this operation? [y/N] ');
       if (!/^y(?:es)?$/iu.test(answer.trim())) return { ok: true, status: 'cancelled', command };
     }
-    const data = await client.call(request, { auth: options.auth, suppressAuth: options.suppressAuth });
+    const data = await client.call(request, { auth: options.auth });
     return settle(command, data);
   }
   if (globals.dryRun) throw new LiandiError('--dry-run only applies to write operations; omit it for reads', 'INVALID_INPUT', 2);
-  const data = await client.call(request, { auth: options.auth, suppressAuth: options.suppressAuth });
+  const data = await client.call(request, { auth: options.auth });
   return settle(command, data);
 }
 
-/**
- * code 10 means "two-factor required": it is an intermediate login step, not a
- * failure, and its session token is what the 2fa command consumes next.
- */
 function settle(command: string, data: unknown): OutputEnvelope {
   const failure = upstreamFailure(data);
   if (!failure) return { ok: true, status: 'success', command, data };
-  if (command === 'auth.login' && failure.code === 10) {
-    return {
-      ok: true, status: 'success', command, data,
-      hint: 'Two-factor required: run "liandi auth 2fa --session-token <token> --code <6 digits>"',
-    };
-  }
   throw new LiandiError(failure.msg || `API returned code ${failure.code}`, `API_CODE_${failure.code}`, 1, redact(data));
 }
 

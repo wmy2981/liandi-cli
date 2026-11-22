@@ -45,17 +45,13 @@ const cases: Case[] = [
     .map(type => ({ name: `notices.read.${type}`, args: ['notice', 'read', type], path: `/api/v2/notifications/make-read/${type}` })),
   { name: 'tops.newbies', args: ['top', 'newbies'], path: '/api/v2/tops/users/newbies' },
   { name: 'tops.followers', args: ['top', 'followers'], path: '/api/v2/tops/users/followers' },
-  { name: 'auth.login', args: ['auth', 'login', '-u', 'test', '--password', 'not-real'], path: '/api/v2/login' },
-  { name: 'auth.2fa', args: ['auth', '2fa', '--session-token', 'fake', '--code', '123456'], path: '/api/v2/login/2fa' },
-  { name: 'auth.logout', args: ['auth', 'logout'], path: '/api/v2/logout' },
   { name: 'system.time', args: ['time'], path: '/api/v2/system/time' },
 ];
 
 const valueFlags: Record<string, string> = {
   '-p': 'page', '--page': 'page', '-s': 'sortOrSize', '--sort': 'sort', '--size': 'size',
   '-c': 'content', '--content': 'content', '--title': 'title', '--tags': 'tags', '--type': 'type',
-  '-r': 'replyTo', '--reply-to': 'replyTo', '--visible': 'visible', '-u': 'username', '--username': 'username',
-  '--password': 'password', '--session-token': 'sessionToken', '--code': 'code', '--tag': 'tag', '--domain': 'domain',
+  '-r': 'replyTo', '--reply-to': 'replyTo', '--visible': 'visible', '--tag': 'tag', '--domain': 'domain',
 };
 
 function valuesFrom(args: string[], name: string): Record<string, string> {

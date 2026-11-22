@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { LiandiClient, md5 } from '../src/client.js';
+import { LiandiClient } from '../src/client.js';
 
 function client(fetchMock: typeof fetch) {
   return new LiandiClient({ baseUrl: 'https://example.com', version: '1.2.3', token: 'secret', fetch: fetchMock });
@@ -25,24 +25,12 @@ describe('HTTP client', () => {
     await anonymous.call({ method: 'GET', path: '/api/v2/tags' });
     expect(fetchMock.mock.calls[0]![1]?.headers).not.toHaveProperty('Authorization');
   });
-  it('suppresses Authorization for the login flow', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'));
-    await client(fetchMock).call({ method: 'POST', path: '/api/v2/login', body: {} }, { suppressAuth: true });
-    expect(fetchMock.mock.calls[0]![1]?.headers).not.toHaveProperty('Authorization');
-  });
   it('serializes JSON bodies and preserves UTF-8', async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'));
     await client(fetchMock).call({ method: 'POST', path: '/api/v2/article', body: { articleTitle: '链滴' } });
     const [, init] = fetchMock.mock.calls[0]!;
     expect(init?.body).toBe('{"articleTitle":"链滴"}');
     expect(init?.headers).toMatchObject({ 'Content-Type': 'application/json; charset=utf-8' });
-  });
-  it('uses a session cookie only for 2FA', async () => {
-    const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(new Response('{}'));
-    await client(fetchMock).call({ method: 'POST', path: '/api/v2/login/2fa', cookieToken: 'login-session', body: {} }, { suppressAuth: true });
-    const [, init] = fetchMock.mock.calls[0]!;
-    expect(init?.headers).toMatchObject({ Cookie: 'symphony=login-session' });
-    expect(init?.headers).not.toHaveProperty('Authorization');
   });
   it('rejects missing auth before any request', async () => {
     const fetchMock = vi.fn<typeof fetch>();
@@ -56,5 +44,4 @@ describe('HTTP client', () => {
     const html = vi.fn<typeof fetch>().mockResolvedValue(new Response('<html></html>', { status: 502 }));
     await expect(client(html).call({ method: 'GET', path: '/' })).rejects.toMatchObject({ code: 'API_ERROR', status: 502 });
   });
-  it('implements the documented password hashing', () => expect(md5('password')).toBe('5f4dcc3b5aa765d61d8327deb882cf99'));
 });

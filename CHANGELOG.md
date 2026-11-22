@@ -2,6 +2,16 @@
 
 Notable, user-visible changes. The CLI surface (commands, flags, exit codes) and the JSON output envelope are the versioned contract; see [docs/publishing.md](docs/publishing.md) for the bump rules.
 
+## v0.2.0 — 2026-11-22
+
+Read commands now render for people by default, and `--format` makes the choice explicit.
+
+- **Breaking:** the default output is human-readable. Article feeds print one block per post (title, then author · time · replies · views, then permalink); users, tags and domains print aligned tables that respect the terminal width and count CJK characters as two cells; `user me`, `article get`, `article source`, `tag get` and `domain get` print field summaries with the body, comments or description underneath. Comments, notifications and activity are compact blocks rather than truncated table cells. Scripts that parsed the previous default output must pass `--format json`.
+- `--format human|json` selects the format explicitly. `-j, --json` is now shorthand for `--format json`, produces byte-identical output, and `-j --format human` is rejected with `INVALID_INPUT` (exit 2).
+- **Breaking:** the `auth` group is removed (`auth login`, `auth 2fa`, `auth logout`). The account/password endpoints return a session credential in the `symphony` cookie, which cannot replace the API Token; the API Token is the only credential the CLI sends. The package no longer exports `md5`.
+- A dry-run preview now prints the method and URL on one line above the body.
+- A payload that does not match the expected shape falls back to the raw `data` as JSON, so a server-side change cannot produce an empty table.
+
 ## v0.1.1 — 2026-11-22
 
 - Releases are published by CI through npm trusted publishing (OIDC); no long-lived npm token is stored in the repository.

@@ -33,12 +33,35 @@ describe('CLI integration', () => {
     expect(JSON.parse(io.out).data.url).toBe('https://ld246.com/api/v2/notifications/make-read/at');
     expect(JSON.parse(io.out).status).toBe('dry-run');
   });
-  it('redacts login credentials and returned session tokens', async () => {
+  it('dropped the auth group', async () => {
     const { io, env } = harness();
-    expect(await run(['auth', 'login', '-u', 'alice', '--password', 'password', '-d', '-j'], { io, env })).toBe(0);
-    const value = JSON.parse(io.out);
-    expect(value.data.body.userPassword).toBe('[REDACTED]');
-    expect(io.out).not.toContain('5f4dcc3b5aa765d61d8327deb882cf99');
+    expect(await run(['auth', 'login', '-u', 'alice'], { io, env })).toBe(2);
+    expect(io.err).toContain('unknown command');
+    expect(io.out).toBe('');
+  });
+  it('rejects conflicting or unknown formats', async () => {
+    const { io, env } = harness();
+    expect(await run(['user', 'me', '-j', '--format', 'human'], { io, env })).toBe(2);
+    expect(io.err).toContain('Use either --json or --format human');
+    io.err = '';
+    expect(await run(['user', 'me', '--format', 'xml'], { io, env })).toBe(2);
+    expect(io.err).toContain('--format must be human or json');
+  });
+  it('renders human output by default and the envelope for --format json', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      code: 0, msg: '', data: { user: { userName: 'wmy2981', userNickname: 'W', userNo: 1, userArticleCount: 2 } },
+    }))));
+    try {
+      const { io, env } = harness();
+      expect(await run(['user', 'me'], { io, env })).toBe(0);
+      expect(io.out).toContain('用户名');
+      expect(io.out).toContain('wmy2981');
+      io.out = '';
+      expect(await run(['user', 'me', '--format', 'json'], { io, env })).toBe(0);
+      expect(JSON.parse(io.out)).toMatchObject({ ok: true, status: 'success', command: 'users.me' });
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
   it('reports invalid arguments as JSON and returns exit code 2', async () => {
     const { io, env } = harness();
@@ -68,7 +91,7 @@ describe('CLI integration', () => {
   it('documents the global flags in subcommand help', async () => {
     const { io, env } = harness();
     expect(await run(['article', 'post', '--help'], { io, env })).toBe(0);
-    for (const flag of ['--token', '--base-url', '--json', '--dry-run', '--yes', '--color', '--no-color']) expect(io.out).toContain(flag);
+    for (const flag of ['--token', '--base-url', '--format', '--json', '--dry-run', '--yes', '--color', '--no-color']) expect(io.out).toContain(flag);
   });
   it('colors status lines only when the flag or the terminal asks for it', async () => {
     const { io, env } = harness();

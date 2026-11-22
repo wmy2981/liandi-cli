@@ -1,7 +1,12 @@
+import { render } from './render.js';
+
 export type OutputKind = 'success' | 'dry-run' | 'cancelled' | 'error';
 
 /** CLI request for color; `auto` defers to the environment and the target stream. */
 export type ColorMode = 'auto' | 'always' | 'never';
+
+/** `human` renders for people, `json` is the stable envelope agents depend on. */
+export type OutputFormat = 'human' | 'json';
 
 export interface OutputEnvelope {
   ok: boolean;
@@ -11,6 +16,15 @@ export interface OutputEnvelope {
   /** Optional guidance, e.g. the next step when 2FA is required. */
   hint?: string;
   error?: { code: string; message: string; details?: unknown };
+}
+
+export interface FormatOptions {
+  format?: OutputFormat;
+  color?: boolean;
+  /** Terminal width used to lay out tables. */
+  width?: number;
+  /** Server the request went to, so rendered links can be absolute. */
+  baseUrl?: string;
 }
 
 const ANSI = { red: '\u001B[31m', yellow: '\u001B[33m', cyan: '\u001B[36m', reset: '\u001B[39m' } as const;
@@ -37,17 +51,30 @@ export function resolveColor(
   return Boolean(stream.isTTY);
 }
 
-export function formatOutput(envelope: OutputEnvelope, json: boolean, color = false): string {
-  if (json) return JSON.stringify(envelope, null, 2);
+export function formatOutput(envelope: OutputEnvelope, options: FormatOptions = {}): string {
+  const { format = 'human', color = false, width, baseUrl } = options;
+  if (format === 'json') return JSON.stringify(envelope, null, 2);
   const paint = (code: string) => (text: string) => color ? `${code}${text}${ANSI.reset}` : text;
   if (envelope.status === 'error') {
     return paint(ANSI.red)(`Error [${envelope.error?.code}]: ${envelope.error?.message}`);
   }
   if (envelope.status === 'dry-run') {
-    return `${paint(ANSI.yellow)('Dry run: no request was sent.')}\n${formatData(envelope.data)}`;
+    return `${paint(ANSI.yellow)('Dry run: no request was sent.')}\n${formatDryRun(envelope.data)}`;
   }
   if (envelope.status === 'cancelled') return paint(ANSI.yellow)('Cancelled: no request was sent.');
-  return envelope.hint ? `${formatData(envelope.data)}\n\n${paint(ANSI.cyan)(envelope.hint)}` : formatData(envelope.data);
+  const body = render(envelope.command, envelope.data, { width, baseUrl });
+  return envelope.hint ? `${body}\n\n${paint(ANSI.cyan)(envelope.hint)}` : body;
+}
+
+/** A preview is the request that would be sent; show the target first, then the body. */
+function formatDryRun(value: unknown): string {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return formatData(value);
+  const preview = value as { method?: unknown; url?: unknown; body?: unknown; action?: unknown; destination?: unknown };
+  if (typeof preview.method === 'string' && typeof preview.url === 'string') {
+    const head = `${preview.method} ${preview.url}`;
+    return preview.body === undefined ? head : `${head}\n${formatData(preview.body)}`;
+  }
+  return formatData(value);
 }
 
 function formatData(value: unknown): string {

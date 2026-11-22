@@ -16,6 +16,7 @@ Semver applies to two things: the CLI surface (commands, flags, exit codes) and 
 
 Rules:
 
+- Before `1.0.0`, a breaking change takes a **minor** bump (`0.1` → `0.2`); reserve `1.0.0` for a surface we intend to freeze.
 - `package.json`, `package-lock.json` and the tag must agree. `scripts/check-version.mjs` enforces this and runs in CI and in the release guard.
 - Tags are always `v`-prefixed and annotated by `npm version`.
 - Never move or delete a published tag, and never publish the same version twice: the release job refuses an existing version on the registry.

@@ -35,8 +35,19 @@ const server = createServer(async (request, response) => {
   if (token.includes('mock-500')) return reply(500, { code: 500, msg: 'boom', data: null });
   if (token.includes('mock-html')) return reply(200, '<html>blocked</html>', 'text/html');
   if (token.includes('mock-code1')) return reply(200, { code: 1, msg: '内容太短', data: null });
-  if (request.url === '/api/v2/login' && body.includes('"userName":"twofa"')) {
-    return reply(200, { code: 10, msg: 'need 2fa', token: 'session-from-login', userName: 'twofa' });
+  // A realistic payload, so the human renderers are exercised end to end.
+  if (token.includes('mock-shape')) {
+    return reply(200, {
+      code: 0,
+      msg: '',
+      data: {
+        pagination: { paginationPageCount: 2991, paginationPageNums: [1] },
+        articles: [{
+          oId: '1', articleTitle: '标题一', articleAuthorName: 'alice', articleCreateTimeStr: '2026-11-22 10:00:00',
+          articleCommentCount: 3, articleViewCount: 9, articlePermalink: 'https://ld246.com/article/1',
+        }],
+      },
+    });
   }
   reply(200, {
     code: 0,
@@ -151,12 +162,15 @@ await check('read: aliases a/c/u/n/dom/tags/tops', async () => {
   }
 });
 
-await check('read: human output is formatted JSON without envelope', async () => {
+await check('read: human output drops the envelope and stays plain', async () => {
   const result = await start(['time']);
   assert(result.code === 0, 'nonzero exit');
   assert(!result.stdout.includes('"ok"'), 'unexpected envelope in human mode');
   assert(!result.stdout.includes('\u001B'), 'unexpected ANSI escapes on a pipe');
-  assert(json(result.stdout).code === 0, 'missing upstream code');
+  // The mock echoes the request, and the renderer has no shape for it, so this is
+  // the fallback: the raw `data` without the code/msg wrapper.
+  assert(json(result.stdout).path === '/api/v2/system/time', 'raw data missing');
+  assert(!result.stdout.includes('"code"'), 'envelope leaked into human output');
 });
 
 await check('output: color follows flags, environment and TTY', async () => {
@@ -188,9 +202,6 @@ const writes = [
   ['notice read reply', ['notice', 'read', 'reply'], 'GET', '/api/v2/notifications/make-read/reply'],
   ['notice read at', ['notice', 'read', 'at'], 'GET', '/api/v2/notifications/make-read/at'],
   ['notice read following', ['notice', 'read', 'following'], 'GET', '/api/v2/notifications/make-read/following'],
-  ['auth login', ['auth', 'login', '-u', 'alice', '--password', 'secret'], 'POST', '/api/v2/login'],
-  ['auth 2fa', ['auth', '2fa', '--session-token', 'session', '--code', '123456'], 'POST', '/api/v2/login/2fa'],
-  ['auth logout', ['auth', 'logout'], 'POST', '/api/v2/logout'],
 ];
 
 for (const [name, args, method, path] of writes) {
@@ -215,11 +226,7 @@ for (const [name, args, method, path] of writes) {
     assert(payload.status === 'success', `status ${payload.status}`);
     const last = requests.at(-1);
     assert(last.method === method && last.url === path, `sent ${last.method} ${last.url}`);
-    if (path === '/api/v2/login' || path === '/api/v2/login/2fa') {
-      assert(last.headers.authorization === undefined, 'login must not send an API token');
-    } else {
-      assert(last.headers.authorization === 'token mock-token', 'missing token header');
-    }
+    assert(last.headers.authorization === 'token mock-token', 'missing token header');
   });
 }
 
@@ -232,13 +239,6 @@ await check('send: article post keeps UTF-8 file content and reward fields', asy
   assert(parsed.articleContent.includes('🎉'), 'emoji lost');
   assert(parsed.articleRewardPoint === 5 && parsed.articleRewardContent === '打赏区', 'reward fields wrong');
   assert(parsed.articleContentType === 'markdown', 'content type wrong');
-});
-
-await check('send: 2FA uses symphony cookie and no Authorization', async () => {
-  await start(['auth', '2fa', '--session-token', 'login-session', '--code', '654321', '-y', '-j']);
-  const last = requests.at(-1);
-  assert(last.headers.cookie === 'symphony=login-session', `cookie ${last.headers.cookie}`);
-  assert(last.headers.authorization === undefined, 'unexpected authorization');
 });
 
 await check('confirm: interactive yes sends once', async () => {
@@ -270,30 +270,6 @@ await check('confirm: non-interactive without -y is refused', async () => {
   assert(requests.length === before, 'request sent');
 });
 
-await check('password: --password-stdin reads one line and never echoes it', async () => {
-  const result = await start(['auth', 'login', '-u', 'alice', '--password-stdin', '-d', '-j'], { input: 'piped-secret\n' });
-  assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
-  const payload = json(result.stdout);
-  assert(payload.status === 'dry-run', `status ${payload.status}`);
-  assert(payload.data.body.userPassword === '[REDACTED]', 'password not redacted');
-  assert(!result.stdout.includes('piped-secret') && !result.stderr.includes('piped-secret'), 'password echoed');
-});
-
-await check('password: --password-stdin with no input fails with exit 2', async () => {
-  const before = requests.length;
-  const result = await start(['auth', 'login', '-u', 'alice', '--password-stdin', '-y', '-j'], { input: '' });
-  assert(result.code === 2, `exit ${result.code}`);
-  assert(json(result.stderr).error.code === 'INVALID_INPUT', 'wrong error code');
-  assert(result.stdout === '', 'stdout should stay empty');
-  assert(requests.length === before, 'request sent without a password');
-});
-
-await check('password: --captcha is forwarded as a login field', async () => {
-  const result = await start(['auth', 'login', '-u', 'alice', '--password', 'x', '--captcha', 'abcd', '-d', '-j']);
-  assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
-  assert(json(result.stdout).data.body.captcha === 'abcd', 'captcha missing from the preview');
-});
-
 await check('output: stdout is always a single JSON document', async () => {
   for (const args of [['time'], ['article', 'list'], ['notice', 'read', 'at', '-d']]) {
     const result = await start([...args, '-j']);
@@ -301,6 +277,45 @@ await check('output: stdout is always a single JSON document', async () => {
     json(result.stdout);
     assert(result.stdout.trim().startsWith('{') && result.stdout.trim().endsWith('}'), `${args.join(' ')}: stdout is not one document`);
   }
+});
+
+await check('format: human output is the default for a read', async () => {
+  const result = await start(['article', 'list'], { env: { LIANDI_TOKEN: 'mock-shape' } });
+  assert(result.code === 0, `exit ${result.code}: ${result.stderr.slice(0, 160)}`);
+  assert(!result.stdout.trim().startsWith('{'), 'human output is JSON');
+  for (const expected of ['标题一', 'alice', '2026-11-22 10:00:00', 'https://ld246.com/article/1', '本页 1 条 · 共 2991 页']) {
+    assert(result.stdout.includes(expected), `missing ${expected}`);
+  }
+});
+
+await check('format: --format json and -j agree', async () => {
+  const explicit = await start(['article', 'list', '--format', 'json'], { env: { LIANDI_TOKEN: 'mock-shape' } });
+  const shorthand = await start(['article', 'list', '-j'], { env: { LIANDI_TOKEN: 'mock-shape' } });
+  assert(explicit.code === 0 && shorthand.code === 0, 'nonzero exit');
+  assert(explicit.stdout === shorthand.stdout, 'the two JSON modes differ');
+  assert(json(explicit.stdout).status === 'success', 'not an envelope');
+});
+
+await check('format: human dry run names the request target', async () => {
+  const result = await start(['article', 'post', '--title', 't', '--tags', 'a', '-c', 'x', '-d']);
+  assert(result.code === 0, `exit ${result.code}`);
+  assert(result.stdout.startsWith('Dry run: no request was sent.\nPOST '), `unexpected preview: ${result.stdout.slice(0, 80)}`);
+  assert(result.stdout.includes('/api/v2/article'), 'target URL missing');
+});
+
+await check('format: conflicting and unknown formats are refused', async () => {
+  const conflict = await start(['article', 'list', '-j', '--format', 'human', '-j']);
+  assert(conflict.code === 2, `exit ${conflict.code}`);
+  assert(json(conflict.stderr).error.code === 'INVALID_INPUT', 'wrong error');
+  const unknown = await start(['article', 'list', '--format', 'xml', '-j']);
+  assert(unknown.code === 2, `exit ${unknown.code}`);
+  assert(json(unknown.stderr).error.code === 'INVALID_INPUT', 'wrong error');
+});
+
+await check('format: the auth group is gone', async () => {
+  const result = await start(['auth', 'login', '-j']);
+  assert(result.code === 2, `exit ${result.code}`);
+  assert(json(result.stderr).error.code === 'INVALID_INPUT', 'wrong error');
 });
 
 // ---------------------------------------------------------------- validation
@@ -318,14 +333,12 @@ const invalid = [
   ['bad size', ['user', 'events', 'x', '-s', '65'], 'INVALID_INPUT'],
   ['bad visible', ['comment', 'edit', '1', '-c', 'x', '--visible', 'yes', '-y'], 'INVALID_INPUT'],
   ['bad reward point', ['article', 'post', '--title', 't', '--tags', 'a', '-c', 'x', '--reward-point', '1.5', '-y'], 'INVALID_INPUT'],
-  ['bad 2fa code', ['auth', '2fa', '--session-token', 's', '--code', '12345', '-y'], 'INVALID_INPUT'],
   ['notice read wallet', ['notice', 'read', 'wallet', '-y'], 'INVALID_INPUT'],
   ['notice unknown type', ['notice', 'bogus'], 'INVALID_INPUT'],
   ['missing required option', ['article', 'post', '-c', 'x', '-y'], 'INVALID_INPUT'],
   ['missing article type', ['article', 'edit', '1', '--title', 't', '--tags', 'a', '-c', 'x', '-y'], 'INVALID_INPUT'],
   ['unknown command', ['bogus'], 'INVALID_INPUT'],
   ['unknown option', ['article', 'list', '--nope'], 'INVALID_INPUT'],
-  ['login without password', ['auth', 'login', '-u', 'a', '-y'], 'INVALID_INPUT'],
   ['bad base url', ['time', '-b', 'file:///tmp'], 'CONFIG_ERROR'],
 ];
 
@@ -413,15 +426,6 @@ await check('api: upstream business error code fails the command', async () => {
   assert(result.stdout === '', 'stdout should stay empty on failure');
 });
 
-await check('api: two-factor login returns the session token with a hint', async () => {
-  const result = await start(['auth', 'login', '-u', 'twofa', '--password', 'x', '-y', '-j']);
-  assert(result.code === 0, `exit ${result.code}`);
-  const payload = json(result.stdout);
-  assert(payload.data.token === 'session-from-login', 'session token missing');
-  assert(payload.hint.includes('auth 2fa'), 'missing 2fa hint');
-  assert(!result.stdout.includes('userPassword'), 'input password echoed');
-});
-
 await check('api: unreachable server is reported, not thrown', async () => {
   const result = await start(['time', '-j'], { env: { LIANDI_BASE_URL: 'http://127.0.0.1:1' } });
   assert(result.code === 1, `exit ${result.code}`);
@@ -437,16 +441,17 @@ await check('meta: --version prints semver', async () => {
 await check('meta: --help lists every group and global flags', async () => {
   const result = await start(['--help']);
   assert(result.code === 0, 'nonzero exit');
-  for (const group of ['article', 'comment', 'domain', 'tag', 'user', 'notice', 'top', 'auth', 'time', 'skill']) {
+  for (const group of ['article', 'comment', 'domain', 'tag', 'user', 'notice', 'top', 'time', 'skill']) {
     assert(result.stdout.includes(group), `missing group ${group}`);
   }
-  for (const flag of ['--json', '--dry-run', '--yes', '--token', '--base-url', '--color', '--no-color']) {
+  assert(!result.stdout.includes('auth'), 'the auth group should be gone');
+  for (const flag of ['--format', '--json', '--dry-run', '--yes', '--token', '--base-url', '--color', '--no-color']) {
     assert(result.stdout.includes(flag), `missing flag ${flag}`);
   }
 });
 
 await check('meta: every group help renders', async () => {
-  for (const group of ['article', 'comment', 'domain', 'tag', 'user', 'notice', 'top', 'auth', 'skill']) {
+  for (const group of ['article', 'comment', 'domain', 'tag', 'user', 'notice', 'top', 'skill']) {
     const result = await start([group, '--help']);
     assert(result.code === 0, `${group} help exit ${result.code}`);
     assert(result.stdout.startsWith('Usage:'), `${group} help missing usage`);

@@ -1,6 +1,6 @@
 ---
 name: liandi
-description: Operate ld246.com (链滴) through the liandi CLI for articles, comments, users, notifications, domains, tags, rankings, authentication and server time. Use whenever the user asks to read, publish, edit, reply on, or inspect 链滴/ld246, even if they do not explicitly mention this skill. Includes safe dry-run and confirmation workflows for agents.
+description: Operate ld246.com (链滴) through the liandi CLI for articles, comments, users, notifications, domains, tags, rankings and server time. Use whenever the user asks to read, publish, edit, reply on, or inspect 链滴/ld246, even if they do not explicitly mention this skill. Includes safe dry-run and confirmation workflows for agents.
 ---
 
 # Liandi CLI
@@ -10,19 +10,19 @@ Use `liandi` for documented ld246.com API operations. If the command is not inst
 ## Workflow
 
 1. Determine whether the task only reads data or changes remote/local state.
-2. For automation, request JSON with `-j` (or `--json`) and parse the single stdout envelope.
-3. Before publishing, editing, replying, marking read, logging in/out, or installing the skill, run the same command with `--dry-run`. Read this preview to the user in a compact form.
+2. For automation, request JSON with `--format json` (or `-j`) and parse the single stdout envelope. The default is human-readable output, which is not meant for parsing.
+3. Before publishing, editing, replying, marking read, or installing the skill, run the same command with `--dry-run`. Read this preview to the user in a compact form.
 4. Never infer permission to publish merely from a request to draft text. Obtain confirmation for the actual preview, then rerun without `--dry-run` and with `-y` for non-interactive execution.
 5. Report the returned `code`, `msg`, relevant IDs, and failures. Do not claim success based only on an HTTP request being attempted.
 
 ## Authentication
 
-- `LIANDI_TOKEN` is the API Token from https://ld246.com/settings/account, **not** a login session token.
-- Resolution: `--token` > process `LIANDI_TOKEN` > `./.env` > `$XDG_CONFIG_HOME/liandi/.env` (normally `~/.config/liandi/.env`).
+- `LIANDI_TOKEN` is the API Token from https://ld246.com/settings/account. It is the only credential the CLI uses.
+- Resolution: `--token` > process `LIANDI_TOKEN` > `./.env` > `$XDG_CONFIG_HOME/liandi/.env` (normally `~/.config/liandi/.env`, `%APPDATA%\liandi\.env` on Windows).
 - When a token is configured it is sent on every v2 request. Without one, ld246.com usually answers `/api/v2/*` with 401 even for nominally public endpoints, so configure a token before expecting reads to work.
 - Prefer a protected environment or `.env` file over `--token`, which may appear in shell history/process listings.
-- Never display, save, or quote the API token or passwords in the conversation. `auth login` may return a login session token that `auth 2fa` needs; pass it through without persisting it or echoing it more than necessary.
-- `auth 2fa` needs the session token returned by `auth login`; it is not the API Token.
+- Never display, save, or quote the API token in the conversation.
+- There is no login command: the account/password endpoints return a session credential that cannot replace the API Token. If a user asks to sign in through the CLI, tell them to use the website and then paste the API Token.
 
 ## Input and output
 
@@ -31,10 +31,9 @@ Use `liandi` for documented ld246.com API operations. If the command is not inst
 - Successful JSON: `{ "ok": true, "status": "success", "command": "...", "data": <API response> }`.
 - Preview JSON uses `status: "dry-run"`; cancellation uses `status: "cancelled"`.
 - Errors use `{ "ok": false, "status": "error", "error": { "code", "message" } }` and a nonzero exit code.
-- A non-zero upstream `code` is surfaced as an error with code `API_CODE_<n>` and exit 1, so `ok: true` really means the server accepted the operation. Login `code 10` means two-factor is required and returns a `hint`.
-- When stdout is piped, default output is also JSON-formatted; `-j` adds the stable envelope and should be preferred.
-- With `-j`, stdout is always exactly one JSON object: an interactive write preview goes to stderr, and a refused non-interactive write puts the preview in `error.details`.
-- `--password-stdin` reads one line and never echoes it; a closed stdin fails with `INVALID_INPUT` (exit 2) instead of hanging.
+- A non-zero upstream `code` is surfaced as an error with code `API_CODE_<n>` and exit 1, so `ok: true` really means the server accepted the operation.
+- Human output is the default even in a pipe, so always pass `--format json` (or `-j`) before parsing stdout.
+- With JSON output, stdout is always exactly one JSON object: an interactive write preview goes to stderr, and a refused non-interactive write puts the preview in `error.details`.
 - Page size is fixed by the server at 20. Use `-p`, not a page-size option. Events use `-s 1..64`.
 
 ## Safety boundaries
@@ -53,10 +52,10 @@ Only the documented v2 endpoints exist. These requests cannot be fulfilled, so s
 - Deleting an article or comment (no delete endpoint; the user must use the web UI).
 - Like, thank, good/bad vote, favorite/unfavorite, follow/unfollow, poll or reward writes.
 - Search, image/attachment/avatar upload, profile or password edits, point transfers, check-in, direct messages.
-- Custom page size (fixed at 20) and captcha images (`/captcha/login` returns an image, not JSON).
-- Persisting a login session: only API Tokens are supported.
+- Custom page size (fixed at 20).
+- Signing in: there is no `auth` command, and a login session cannot replace the API Token.
 
-Writable operations are exactly: `article post`, `article edit` (own), `comment post`, `comment edit` (own), `notice read`, `auth login`, `auth 2fa`, `auth logout`, and the local `skill install`.
+Writable operations are exactly: `article post`, `article edit` (own), `comment post`, `comment edit` (own), `notice read`, and the local `skill install`.
 
 ## Missing or ambiguous input
 

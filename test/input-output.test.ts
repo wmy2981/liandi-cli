@@ -38,28 +38,32 @@ describe('input', () => {
 
 describe('output', () => {
   it('uses one JSON envelope and redacts credentials', () => {
-    const result = JSON.parse(formatOutput({ ok: true, status: 'success', command: 'test', data: { code: 0 } }, true));
+    const result = JSON.parse(formatOutput({ ok: true, status: 'success', command: 'test', data: { code: 0 } }, { format: 'json' }));
     expect(result).toEqual({ ok: true, status: 'success', command: 'test', data: { code: 0 } });
     expect(redact({ token: 'session', userPassword: 'y', nested: { twofactorAuthCode: '123456' }, title: 'ok' }))
       .toEqual({ token: 'session', userPassword: '[REDACTED]', nested: { twofactorAuthCode: '[REDACTED]' }, title: 'ok' });
   });
   it('makes dry-run and cancellation explicit in human output', () => {
-    expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, false)).toContain('no request was sent');
-    expect(formatOutput({ ok: true, status: 'cancelled' }, false)).toContain('Cancelled');
-    expect(formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, false)).toBe('Error [X]: bad');
+    expect(formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } })).toContain('no request was sent');
+    expect(formatOutput({ ok: true, status: 'cancelled' })).toContain('Cancelled');
+    expect(formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } })).toBe('Error [X]: bad');
+  });
+  it('shows the request target before the body in a dry run', () => {
+    const text = formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST', url: 'https://ld246.com/api/v2/article', body: { articleTitle: 't' } } });
+    expect(text).toBe('Dry run: no request was sent.\nPOST https://ld246.com/api/v2/article\n{\n  "articleTitle": "t"\n}');
   });
   it('colors status lines and hints but never the data', () => {
-    const error = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, false, true);
+    const error = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, { color: true });
     expect(error).toBe('\u001B[31mError [X]: bad\u001B[39m');
-    const dryRun = formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, false, true);
+    const dryRun = formatOutput({ ok: true, status: 'dry-run', data: { method: 'POST' } }, { color: true });
     expect(dryRun).toContain('\u001B[33mDry run: no request was sent.\u001B[39m');
     expect(dryRun.split('\n').slice(1).join('\n')).not.toContain('\u001B');
-    const hinted = formatOutput({ ok: true, status: 'success', data: { code: 0 }, hint: 'run auth 2fa' }, false, true);
-    expect(hinted).toContain('\u001B[36mrun auth 2fa\u001B[39m');
+    const hinted = formatOutput({ ok: true, status: 'success', command: 'system.time', data: { code: 0, data: 0 }, hint: 'run time again' }, { color: true });
+    expect(hinted).toContain('\u001B[36mrun time again\u001B[39m');
     expect(hinted.split('\n').slice(0, -1).join('\n')).not.toContain('\u001B');
   });
   it('never emits ANSI escapes in JSON mode', () => {
-    const text = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, true, true);
+    const text = formatOutput({ ok: false, status: 'error', error: { code: 'X', message: 'bad' } }, { format: 'json', color: true });
     expect(text).not.toContain('\u001B');
     expect(JSON.parse(text).error.code).toBe('X');
   });

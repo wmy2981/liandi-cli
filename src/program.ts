@@ -1,13 +1,11 @@
 import { Command, CommanderError } from 'commander';
 import { readFileSync } from 'node:fs';
-import { Writable } from 'node:stream';
 import { createInterface } from 'node:readline/promises';
-import { stdin, stderr } from 'node:process';
 import { baseUrl, resolveToken } from './config.js';
 import { definitions, readableNoticeType } from './catalog.js';
 import { LiandiError } from './errors.js';
 import { defaultIO, errorEnvelope, execute, type GlobalOptions, type IO } from './runtime.js';
-import { formatOutput, redact, resolveColor, type ColorMode, type OutputEnvelope } from './output.js';
+import { formatOutput, resolveColor, type ColorMode, type OutputEnvelope, type OutputFormat } from './output.js';
 import { installSkill, skillPaths } from './skill.js';
 
 interface ProgramOptions { env?: NodeJS.ProcessEnv; io?: IO; version?: string }
@@ -23,23 +21,34 @@ function packageVersion(): string {
 function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } {
   const globals: GlobalOptions = {};
   const rest: string[] = [];
-  const names: Record<string, keyof GlobalOptions> = {
-    '--token': 'token', '-t': 'token', '--base-url': 'baseUrl', '-b': 'baseUrl', '--color': 'color',
+  let jsonFlag = false;
+  const values: Record<string, 'token' | 'baseUrl' | 'color' | 'format'> = {
+    '--token': 'token', '-t': 'token', '--base-url': 'baseUrl', '-b': 'baseUrl',
+    '--color': 'color', '--format': 'format',
   };
-  const booleans: Record<string, keyof GlobalOptions> = { '--json': 'json', '-j': 'json', '--dry-run': 'dryRun', '-d': 'dryRun', '--yes': 'yes', '-y': 'yes' };
+  const booleans: Record<string, keyof GlobalOptions> = { '--dry-run': 'dryRun', '-d': 'dryRun', '--yes': 'yes', '-y': 'yes' };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]!;
     const name = arg.includes('=') ? arg.slice(0, arg.indexOf('=')) : arg;
-    if (name === '--no-color') {
+    if (name === '--json' || name === '-j') {
+      if (arg.includes('=')) throw new LiandiError(`${name} does not take a value`, 'INVALID_INPUT', 2);
+      if (globals.format === 'human') throw new LiandiError('Use either --json or --format human, not both', 'INVALID_INPUT', 2);
+      jsonFlag = true;
+      globals.format = 'json';
+    } else if (name === '--no-color') {
       if (arg.includes('=')) throw new LiandiError('--no-color does not take a value', 'INVALID_INPUT', 2);
       globals.color = 'never';
-    } else if (name in names) {
+    } else if (name in values) {
       const value = arg.includes('=') ? arg.slice(arg.indexOf('=') + 1) : argv[++index];
       if (!value) throw new LiandiError(`${name} requires a value`, 'INVALID_INPUT', 2);
-      if (names[name] === 'color' && !isColorMode(value)) {
+      if (values[name] === 'color' && !isColorMode(value)) {
         throw new LiandiError('--color must be auto, always or never', 'INVALID_INPUT', 2);
       }
-      (globals as Record<string, string | boolean | undefined>)[names[name]!] = value;
+      if (values[name] === 'format') {
+        if (!isFormat(value)) throw new LiandiError('--format must be human or json', 'INVALID_INPUT', 2);
+        if (jsonFlag && value === 'human') throw new LiandiError('Use either --json or --format human, not both', 'INVALID_INPUT', 2);
+      }
+      (globals as Record<string, string | boolean | undefined>)[values[name]!] = value;
     } else if (name in booleans) {
       if (arg.includes('=')) throw new LiandiError(`${name} does not take a value`, 'INVALID_INPUT', 2);
       (globals as Record<string, string | boolean | undefined>)[booleans[name]!] = true;
@@ -54,12 +63,17 @@ function parseFlags(argv: string[]): { globals: GlobalOptions; rest: string[] } 
 }
 
 const COLOR_MODES: readonly ColorMode[] = ['auto', 'always', 'never'];
+const FORMATS: readonly OutputFormat[] = ['human', 'json'];
 
 function isColorMode(value: string): value is ColorMode {
   return (COLOR_MODES as readonly string[]).includes(value);
 }
 
-const WRITE = new Set(['post', 'edit', 'read', 'login', '2fa', 'logout', 'install']);
+function isFormat(value: string): value is OutputFormat {
+  return (FORMATS as readonly string[]).includes(value);
+}
+
+const WRITE = new Set(['post', 'edit', 'read', 'install']);
 
 /** Map a typed `group.action` path to the definition name used in envelopes. */
 function definitionName(typed: string): string | undefined {
@@ -83,36 +97,13 @@ export function isWriteCommand(argv: string[]): boolean {
   return WRITE.has(action);
 }
 
-/**
- * Read one password line from stdin without echoing it. A closed or empty stdin
- * must fail loudly: `readline` would otherwise leave the prompt unsettled.
- */
-async function readPassword(): Promise<string> {
-  const interactive = Boolean(stdin.isTTY);
-  // Only humans need the prompt; a pipe must keep stderr clean for JSON errors.
-  if (interactive) stderr.write('Password: ');
-  // readline echoes keystrokes to `output`; a discarding sink keeps them off screen.
-  const sink = new Writable({ write: (_chunk, _encoding, callback) => { callback(); } });
-  const rl = createInterface({ input: stdin, output: sink, terminal: Boolean(stdin.isTTY) });
-  try {
-    const password = await new Promise<string>((resolve, reject) => {
-      rl.once('close', () => { reject(new LiandiError('No password on stdin', 'INVALID_INPUT', 2)); });
-      rl.question('').then(resolve, reject);
-    });
-    if (!password) throw new LiandiError('No password on stdin', 'INVALID_INPUT', 2);
-    return password;
-  } finally {
-    rl.close();
-    if (interactive) stderr.write('\n');
-  }
-}
-
 /** Printed by every command: these flags are parsed before Commander sees them. */
 const GLOBAL_HELP = `
 Global options (can appear before or after commands):
   -t, --token <token>       API token (highest-priority source)
   -b, --base-url <url>      API server (default: https://ld246.com)
-  -j, --json                Uniform JSON output for agents
+  --format <format>         Output format: human (default) or json
+  -j, --json                Shorthand for --format json
   -d, --dry-run             Preview a write; never send it
   -y, --yes                 Execute a write without interactive confirmation
   --color <when>            Colorize status lines and hints: auto, always, never
@@ -121,6 +112,7 @@ Global options (can appear before or after commands):
   -h, --help                Show help
 
 Reads never use --dry-run/--yes. Writes always show a preview before confirmation.
+--format human renders tables and summaries; --format json is the stable envelope for scripts.
 Authentication: --token > LIANDI_TOKEN > ./.env > ~/.config/liandi/.env
 Run "liandi <group> --help" for subcommands.`;
 
@@ -147,11 +139,16 @@ export function createProgram(options: ProgramOptions = {}): Command {
     if (!definition) throw new LiandiError('Internal command mapping is missing', 'INTERNAL_ERROR');
     const globals = invocationGlobals;
     const resolved = resolveToken(globals.token, env);
-    const result = await execute(name, await definition.request(args, values), {
-      ...globals, baseUrl: baseUrl(env, globals.baseUrl), token: resolved.token,
+    const server = baseUrl(env, globals.baseUrl);
+    const rendered = await execute(name, await definition.request(args, values), {
+      ...globals, baseUrl: globals.baseUrl, token: resolved.token,
     }, io, version, env, definition);
-    if (name.startsWith('auth.') && result.status === 'success') result.data = redact(result.data);
-    io.stdout.write(formatOutput(result, globals.json ?? false, resolveColor(globals.color, io.stdout, env)) + '\n');
+    io.stdout.write(formatOutput(rendered, {
+      format: globals.format ?? 'human',
+      color: resolveColor(globals.color, io.stdout, env),
+      width: io.stdout.columns,
+      baseUrl: server,
+    }) + '\n');
   };
 
   const group = (name: string, description: string, ...aliases: string[]) => {
@@ -232,53 +229,41 @@ export function createProgram(options: ProgramOptions = {}): Command {
   run(top.command('newbies').description('Newly registered users'), async () => perform('tops.newbies', [], {}));
   run(top.command('followers').description('Users ranked by followers'), async () => perform('tops.followers', [], {}));
 
-  const auth = group('auth', 'Login, two-factor authentication and logout');
-  run(auth.command('login').description('Verify username/email and password (write; password is hashed locally)')
-    .requiredOption('-u, --username <username>', 'Username or email')
-    .option('--password <password>', 'Plain password; prefer --password-stdin to avoid shell history')
-    .option('--password-stdin', 'Read one password line from stdin')
-    .option('--captcha <captcha>', 'Captcha if requested by the server'), async (v: Values) => {
-      if (v.passwordStdin) {
-        if (v.password !== undefined) throw new LiandiError('Use either --password or --password-stdin, not both', 'INVALID_INPUT', 2);
-        v.password = await readPassword();
-      }
-      if (v.password === undefined) throw new LiandiError('Provide --password-stdin or --password <password>', 'INVALID_INPUT', 2);
-      return perform('auth.login', [], v);
-    });
-  run(auth.command('2fa').description('Complete two-factor login with the login session token (write)')
-    .requiredOption('--session-token <token>', 'Token returned by "auth login" when 2FA is required')
-    .requiredOption('--code <code>', 'Six-digit authenticator code'), async (v: Values) => perform('auth.2fa', [], v));
-  run(auth.command('logout').description('Log out (write)'), async () => perform('auth.logout', [], {}));
-
   run(program.command('time').description('Current server time'), async () => perform('system.time', [], {}));
 
   run(group('skill', 'Install the bundled agent skill').command('install').description('Install or update ~/.agents/skills/liandi (local file write)'),
     async () => {
       lastCommand = 'skill.install';
       const globals = invocationGlobals;
-      const color = resolveColor(globals.color, io.stdout, env);
+      const format = globals.format ?? 'human';
+      const rendering = {
+        format,
+        color: resolveColor(globals.color, io.stdout, env),
+        width: io.stdout.columns,
+        baseUrl: baseUrl(env, globals.baseUrl),
+      };
       const preview = { action: 'install or update', destination: skillPaths().destination };
       if (globals.dryRun) {
-        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, globals.json ?? false, color) + '\n');
+        io.stdout.write(formatOutput({ ok: true, status: 'dry-run', command: lastCommand, data: preview }, rendering) + '\n');
         return;
       }
       if (!globals.yes) {
         const interactive = Boolean(io.stdin.isTTY && io.stdout.isTTY);
         const running: OutputEnvelope = { ok: true, status: 'dry-run', command: lastCommand, data: preview };
         // stdout stays a single envelope in JSON mode; see runtime.execute.
-        if (!globals.json) io.stdout.write(formatOutput(running, false) + '\n');
-        else if (interactive) io.stderr.write(formatOutput(running, true) + '\n');
+        if (format === 'human') io.stdout.write(formatOutput(running, rendering) + '\n');
+        else if (interactive) io.stderr.write(formatOutput(running, { format: 'json' }) + '\n');
         if (!interactive) throw new LiandiError('Confirmation required. Review with --dry-run, then rerun with --yes', 'CONFIRMATION_REQUIRED', 2, preview);
         const confirm = io.confirm ?? (async (prompt: string) => {
           const rl = createInterface({ input: process.stdin, output: process.stdout });
           try { return await rl.question(prompt); } finally { rl.close(); }
         });
         if (!/^y(?:es)?$/iu.test((await confirm('Install this skill? [y/N] ')).trim())) {
-          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, globals.json ?? false, color) + '\n');
+          io.stdout.write(formatOutput({ ok: true, status: 'cancelled', command: lastCommand }, rendering) + '\n');
           return;
         }
       }
-      io.stdout.write(formatOutput({ ok: true, status: 'success', command: lastCommand, data: await installSkill() }, globals.json ?? false, color) + '\n');
+      io.stdout.write(formatOutput({ ok: true, status: 'success', command: lastCommand, data: await installSkill() }, rendering) + '\n');
     });
 
   // Global flags are parsed separately so they work at any position, as agents commonly append -j.
@@ -307,6 +292,15 @@ function normalizeError(error: unknown): unknown {
   return new LiandiError(error.message.replace(/^error:\s*/iu, '').trim(), 'INVALID_INPUT', 2);
 }
 
+/** Flags that decide how an error is printed, readable even when parsing failed. */
+function formatFromArgv(argv: string[]): OutputFormat {
+  if (argv.includes('--json') || argv.includes('-j')) return 'json';
+  const inline = argv.find(arg => arg.startsWith('--format='));
+  if (inline) return inline.slice('--format='.length) === 'json' ? 'json' : 'human';
+  const index = argv.indexOf('--format');
+  return index >= 0 && argv[index + 1] === 'json' ? 'json' : 'human';
+}
+
 export async function run(argv: string[], options: ProgramOptions = {}): Promise<number> {
   const io = options.io ?? defaultIO;
   const env = options.env ?? process.env;
@@ -315,7 +309,7 @@ export async function run(argv: string[], options: ProgramOptions = {}): Promise
   const pending = (() => {
     try { return parseFlags(argv).globals; } catch { return undefined; }
   })();
-  const json = pending?.json ?? (argv.includes('--json') || argv.includes('-j'));
+  const format = pending?.format ?? formatFromArgv(argv);
   const color = resolveColor(pending?.color, io.stderr, env);
   try {
     await createProgram(options).parseAsync(argv, { from: 'user' });
@@ -323,7 +317,7 @@ export async function run(argv: string[], options: ProgramOptions = {}): Promise
   } catch (error) {
     if (error instanceof CommanderError && ['commander.helpDisplayed', 'commander.version'].includes(error.code)) return 0;
     const known = normalizeError(error);
-    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), json, json ? false : color) + '\n');
+    io.stderr.write(formatOutput(errorEnvelope(known, lastCommand), { format, color }) + '\n');
     // Unexpected exceptions are runtime failures: never report them as success.
     return known instanceof LiandiError ? known.exitCode : 1;
   }
