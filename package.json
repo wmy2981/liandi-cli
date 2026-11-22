@@ -1,6 +1,6 @@
 {
   "name": "liandi",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Human and agent friendly CLI for the ld246.com community API",
   "license": "MIT",
   "type": "module",
